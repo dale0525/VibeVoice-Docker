@@ -176,6 +176,8 @@ jobs:
       - name: Create GitHub Release (if missing)
         env:
           GH_TOKEN: ${{ github.token }}
+          # 说明：release job 没有 checkout 仓库，因此 gh 不能通过 git remote 自动推断 repo，需要显式指定
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail
