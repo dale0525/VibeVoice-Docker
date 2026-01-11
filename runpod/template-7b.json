@@ -1,0 +1,22 @@
+{
+  "name": "vibevoice-docker-7b",
+  "imageName": "ghcr.io/dale0525/vibevoice-docker:7b",
+  "category": "NVIDIA",
+  "containerDiskInGb": 120,
+  "dockerEntrypoint": [],
+  "dockerStartCmd": [],
+  "env": {
+    "VIBEVOICE_WARMUP_ON_PRELOAD": "false",
+    "VIBEVOICE_IDLE_UNLOAD_SECONDS": "900",
+    "VIBEVOICE_EXIT_ON_IDLE_SECONDS": "30",
+    "VIBEVOICE_MAX_LOADED_MODELS": "1"
+  },
+  "isPublic": false,
+  "isServerless": false,
+  "ports": [
+    "8000/http"
+  ],
+  "readme": "## VibeVoice-Docker (TTS API + Web UI)\n\n- Web UI: http://<public-ip>:<public-port>/\n- Health: http://<public-ip>:<public-port>/healthz\n- API Key（可选）：设置 VIBEVOICE_API_KEY 后，请求需带 Authorization: Bearer <key>\n\n数据持久化：/data（自定义音色写入 /data/voices）\n",
+  "volumeInGb": 20,
+  "volumeMountPath": "/data"
+}

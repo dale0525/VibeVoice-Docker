@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# agents
+.codex/
+
+# pixi
+.pixi/
+.pixi-cache/
+.buildx-cache/
+
+# local runtime data
+data/
+models/
+
+# VibeVoice: 忽略不影响推理的演示资源，避免仓库体积过大
+VibeVoice/Figures/
+VibeVoice/demo/example/
+VibeVoice/demo/text_examples/
+VibeVoice/demo/VibeVoice_colab.ipynb
+VibeVoice/demo/voices/streaming_model/

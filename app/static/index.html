@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VibeVoice-Docker</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1>VibeVoice-Docker</h1>
+        <div class="muted">OpenAI 兼容 TTS API + 语音克隆管理</div>
+      </header>
+
+      <section class="card">
+        <h2>连接设置</h2>
+        <div class="row">
+          <label>
+            API Key（可选）
+            <input id="apiKey" type="password" placeholder="Bearer token（如启用）" />
+          </label>
+          <button id="saveApiKey" class="secondary">保存</button>
+          <button id="clearApiKey" class="secondary">清除</button>
+        </div>
+        <div class="row">
+          <button id="refresh" class="secondary">刷新音色列表</button>
+          <div id="status" class="status muted"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>生成语音</h2>
+        <div class="grid">
+          <label>
+            模型（镜像已固定）
+            <input id="modelDisplay" type="text" readonly />
+          </label>
+          <label>
+            音色
+            <select id="voiceSelect"></select>
+          </label>
+          <label>
+            格式
+            <select id="formatSelect">
+              <option value="wav">wav</option>
+              <option value="mp3">mp3</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          文本（中文会自动按 README Tips 归一化为英文逗号/句号）
+          <textarea id="textInput" rows="6" placeholder="输入要合成的文本..."></textarea>
+        </label>
+        <div class="row">
+          <button id="generate" class="primary">生成</button>
+          <a id="downloadLink" class="secondary" href="#" download style="display: none">下载</a>
+        </div>
+        <audio id="audioPlayer" controls style="width: 100%; margin-top: 8px"></audio>
+      </section>
+
+      <section class="card">
+        <h2>创建自定义克隆音色</h2>
+        <div class="grid">
+          <label>
+            名称
+            <input id="voiceName" type="text" placeholder="例如：我的音色" />
+          </label>
+          <label>
+            参考音频（wav/mp3/flac/m4a/ogg）
+            <input id="voiceFile" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg" />
+          </label>
+        </div>
+        <div class="row">
+          <button id="createVoice" class="primary">创建音色</button>
+          <button id="deleteVoice" class="danger">删除所选音色（仅自定义）</button>
+        </div>
+      </section>
+
+      <footer class="footer muted">
+        API: <code>POST /v1/audio/speech</code> · 音色: <code>/v1/voices</code> · 模型: <code>/v1/models</code>
+      </footer>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

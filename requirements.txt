@@ -1,0 +1,15 @@
+accelerate==1.6.0
+transformers==4.51.3
+diffusers
+tqdm
+numpy
+scipy
+librosa
+ml-collections
+absl-py
+modelscope==1.33.0
+
+fastapi==0.115.6
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+soundfile==0.12.1

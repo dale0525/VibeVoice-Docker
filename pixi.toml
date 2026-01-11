@@ -1,0 +1,19 @@
+[workspace]
+name = "vibevoice-docker"
+version = "0.1.0"
+description = "VibeVoice Docker API + Web UI"
+channels = ["conda-forge"]
+platforms = ["win-64", "linux-64"]
+
+[dependencies]
+python = ">=3.10,<3.12"
+
+[tasks]
+dev = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg VIBEVOICE_MODEL_ID=vibevoice-1.5b -t vibevoice-docker:local --load . && docker compose -f docker-compose.dev.yml up"
+dev-7b = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg VIBEVOICE_MODEL_ID=vibevoice-7b -t vibevoice-docker:local --load . && docker compose -f docker-compose.dev.yml up"
+up = "docker compose -f docker-compose.prod.yml up"
+down = "docker compose -f docker-compose.prod.yml down"
+logs = "docker compose -f docker-compose.prod.yml logs -f"
+shell = "docker compose -f docker-compose.prod.yml exec vibevoice bash"
+docker-build = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg VIBEVOICE_MODEL_ID=vibevoice-1.5b -t vibevoice-docker:local --load ."
+docker-build-7b = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg VIBEVOICE_MODEL_ID=vibevoice-7b -t vibevoice-docker:local --load ."

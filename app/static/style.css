@@ -1,0 +1,149 @@
+:root {
+  --bg: #0b1020;
+  --card: #121a33;
+  --text: #e8ecff;
+  --muted: #a7b0d6;
+  --border: rgba(255, 255, 255, 0.08);
+  --primary: #5b8cff;
+  --danger: #ff5b6e;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: radial-gradient(1200px 800px at 20% 10%, rgba(91, 140, 255, 0.18), transparent),
+    radial-gradient(900px 700px at 80% 20%, rgba(255, 91, 110, 0.12), transparent), var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+}
+
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 28px 16px 40px;
+}
+
+.header {
+  margin-bottom: 18px;
+}
+
+h1 {
+  margin: 0 0 6px 0;
+  font-size: 28px;
+}
+
+h2 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  letter-spacing: 0.2px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  margin: 12px 0;
+  backdrop-filter: blur(8px);
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+input,
+select,
+textarea {
+  margin-top: 6px;
+  width: 100%;
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  outline: none;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 120px;
+}
+
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+@media (max-width: 780px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+button,
+a.secondary,
+a.danger {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.22);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+button.primary {
+  background: rgba(91, 140, 255, 0.22);
+  border-color: rgba(91, 140, 255, 0.45);
+}
+
+button.danger {
+  background: rgba(255, 91, 110, 0.18);
+  border-color: rgba(255, 91, 110, 0.45);
+}
+
+button.secondary,
+a.secondary {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.status {
+  min-height: 18px;
+  font-size: 12px;
+}
+
+.footer {
+  margin-top: 14px;
+  font-size: 12px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: #d6dcff;
+}
+

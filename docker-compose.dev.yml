@@ -1,0 +1,30 @@
+services:
+  vibevoice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VIBEVOICE_MODEL_ID: vibevoice-1.5b
+    image: vibevoice-docker:local
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+      - ./app:/app
+      - ./VibeVoice:/opt/VibeVoice
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WATCHFILES_FORCE_POLLING=1
+      - VIBEVOICE_PRELOAD_MODEL=1
+      - VIBEVOICE_WARMUP_ON_PRELOAD=true
+      - VIBEVOICE_IDLE_UNLOAD_SECONDS=900
+      - VIBEVOICE_MAX_LOADED_MODELS=1
+    command:
+      ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ["0"]
+              capabilities: [gpu]

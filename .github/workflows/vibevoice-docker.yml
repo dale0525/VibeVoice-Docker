@@ -1,0 +1,116 @@
+name: build-and-push-vibevoice-docker
+
+on:
+  push:
+    branches: ["main"]
+    tags: ["v*"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    name: build-and-push (${{ matrix.model_tag }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model_tag: "1.5b"
+            model_id: "vibevoice-1.5b"
+          - model_tag: "7b"
+            model_id: "vibevoice-7b"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show disk usage (before cleanup)
+        run: |
+          df -h
+
+      # 释放 GitHub Hosted Runner 的磁盘空间，为 VibeVoice 模型下载/镜像分层留足空间
+      # 参考：VibeVoice-Docker/refonly-deploy-tts.yaml
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+
+      - name: Show disk usage (after cleanup)
+        run: |
+          df -h
+          docker system df || true
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: vars
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}-${{ matrix.model_tag }}"
+          else
+            TAG="${{ matrix.model_tag }}"
+          fi
+          {
+            echo "image=${IMAGE}"
+            echo "tag=${TAG}"
+            echo "tags=${IMAGE}:${TAG}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          build-args: |
+            USE_CN_MIRRORS=0
+            PIP_INDEX_URL=https://pypi.org/simple/
+            VIBEVOICE_MODEL_ID=${{ matrix.model_id }}
+          push: true
+          tags: ${{ steps.vars.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: create-github-release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release (if missing)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            echo "Release already exists: ${TAG}"
+            exit 0
+          fi
+
+          gh release create "${TAG}" --generate-notes
