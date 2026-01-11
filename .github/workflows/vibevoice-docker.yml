@@ -3,7 +3,6 @@ name: build-and-push-vibevoice-docker
 on:
   push:
     branches: ["main"]
-    tags: ["v*"]
     paths:
       - "Dockerfile"
       - "Dockerfile.7b"
@@ -72,16 +71,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # 每次 workflow run 自动生成递增版本号（避免依赖手动打 tag）
+          # 版本号规则：v0.0.<GITHUB_RUN_NUMBER>
+          VERSION="v0.0.${GITHUB_RUN_NUMBER}"
           IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker"
-          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            TAG="${GITHUB_REF_NAME}-${{ matrix.model_tag }}"
-          else
-            TAG="${{ matrix.model_tag }}"
-          fi
+          MODEL_TAG="${{ matrix.model_tag }}"
           {
             echo "image=${IMAGE}"
-            echo "tag=${TAG}"
-            echo "tags=${IMAGE}:${TAG}"
+            echo "version=${VERSION}"
+            echo "tags<<EOF"
+            echo "${IMAGE}:${VERSION}-${MODEL_TAG}"
+            echo "${IMAGE}:${MODEL_TAG}"
+            echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Build and push
@@ -101,7 +102,6 @@ jobs:
 
   release:
     name: create-github-release
-    if: startsWith(github.ref, 'refs/tags/')
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -113,11 +113,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"
+          TAG="v0.0.${GITHUB_RUN_NUMBER}"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker"
+
+          NOTES_FILE="$(mktemp)"
+          cat > "${NOTES_FILE}" <<EOF
+          自动构建 Release（GitHub Actions）。
+
+          Docker 镜像：
+          - ${IMAGE}:${TAG}-1.5b
+          - ${IMAGE}:${TAG}-7b
+          EOF
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "Release already exists: ${TAG}"
             exit 0
           fi
 
-          gh release create "${TAG}" --generate-notes
+          gh release create "${TAG}" \
+            --target "${GITHUB_SHA}" \
+            --title "${TAG}" \
+            --notes-file "${NOTES_FILE}"
