@@ -4,6 +4,13 @@ on:
   push:
     branches: ["main"]
     tags: ["v*"]
+    paths:
+      - "Dockerfile"
+      - "Dockerfile.7b"
+      - "requirements.txt"
+      - "app/**"
+      - "scripts/**"
+      - "VibeVoice/**"
   workflow_dispatch: {}
 
 permissions:
@@ -31,7 +38,6 @@ jobs:
           df -h
 
       # 释放 GitHub Hosted Runner 的磁盘空间，为 VibeVoice 模型下载/镜像分层留足空间
-      # 参考：VibeVoice-Docker/refonly-deploy-tts.yaml
       - name: Free Disk Space (Ubuntu)
         uses: jlumbroso/free-disk-space@main
         with:

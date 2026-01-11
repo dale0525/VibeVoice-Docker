@@ -6,6 +6,7 @@ services:
       args:
         VIBEVOICE_MODEL_ID: vibevoice-1.5b
     image: vibevoice-docker:local
+    container_name: vibevoice-dev
     ports:
       - "8000:8000"
     volumes:

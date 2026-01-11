@@ -47,8 +47,8 @@ docker compose -f docker-compose.prod.7b.yml up -d
 一个 endpoint 固定一个模型；需要另一个模型时，创建新的 endpoint。
 
 官方文档：
-- `https://docs.runpod.io/serverless/workers/github-integration.md`
-- `https://docs.runpod.io/serverless/load-balancing/overview`
+- [https://docs.runpod.io/serverless/workers/github-integration.md](https://docs.runpod.io/serverless/workers/github-integration.md)
+- [https://docs.runpod.io/serverless/load-balancing/overview](https://docs.runpod.io/serverless/load-balancing/overview)
 
 部署流程（控制台）：
 1. Settings → Connections → GitHub → Connect

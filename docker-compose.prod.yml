@@ -1,6 +1,7 @@
 services:
   vibevoice:
     image: ghcr.io/dale0525/vibevoice-docker:1.5b
+    container_name: vibevoice-1.5b
     ports:
       - "8000:8000"
     volumes:
