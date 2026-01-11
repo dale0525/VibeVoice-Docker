@@ -95,55 +95,14 @@ def looks_like_speaker_script(text: str) -> bool:
     return bool(_SPEAKER_LINE_RE.match(first))
 
 
-def _split_by_period_like(text: str) -> list[str]:
+def normalize_single_speaker_script(script: str, *, enable_cn_punct_normalize: bool) -> str:
     """
-    按“句号类”边界拆分文本：
-    - 支持中文句号 '。' 与英文句号 '.'
-    - 避免把数字小数点 digit '.' digit 误切开
-    """
-    if not text:
-        return []
-
-    parts: list[str] = []
-    buf: list[str] = []
-
-    for idx, ch in enumerate(text):
-        if ch == "。":
-            seg = "".join(buf).strip()
-            if seg:
-                parts.append(seg)
-            buf.clear()
-            continue
-
-        if ch == ".":
-            prev_ch = text[idx - 1] if idx > 0 else ""
-            next_ch = text[idx + 1] if idx + 1 < len(text) else ""
-            if prev_ch.isdigit() and next_ch.isdigit():
-                buf.append(ch)
-                continue
-
-            seg = "".join(buf).strip()
-            if seg:
-                parts.append(seg)
-            buf.clear()
-            continue
-
-        buf.append(ch)
-
-    seg = "".join(buf).strip()
-    if seg:
-        parts.append(seg)
-    return parts
-
-
-def normalize_and_split_single_speaker_script(script: str, *, enable_cn_punct_normalize: bool) -> str:
-    """
-    将输入脚本归一化为“单一说话人脚本”，并按句号拆分为多行。
+    将输入脚本归一化为“单一说话人脚本”。
 
     规则：
     - 仅允许出现一种 Speaker 编号（例如全是 Speaker 0 或全是 Speaker 1），否则抛出 ValueError
     - 支持行格式：SpeakerN: / Speaker N:（大小写不敏感）
-    - 对冒号后的文本部分：可选中文标点归一化；若包含中文则按句号拆分为多行，且每行保持同一 Speaker
+    - 对冒号后的文本部分：可选中文标点归一化（字符级替换）
     - 若遇到未带 Speaker 前缀的行：视为延续上一行的同一 Speaker
     """
     if not script or not script.strip():
@@ -176,12 +135,9 @@ def normalize_and_split_single_speaker_script(script: str, *, enable_cn_punct_no
         if enable_cn_punct_normalize and contains_cjk(text):
             text = normalize_cn_punctuation_to_en_comma_period(text)
 
-        parts = _split_by_period_like(text)
-
-        for part in parts:
-            cleaned = part.strip()
-            if cleaned:
-                out_lines.append(f"Speaker {speaker_id}: {cleaned}")
+        cleaned = text.strip()
+        if cleaned:
+            out_lines.append(f"Speaker {speaker_id}: {cleaned}")
 
     if not out_lines:
         raise ValueError("No valid content found in input.")

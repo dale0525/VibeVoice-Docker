@@ -114,7 +114,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - 普通文本会自动包装成 `Speaker 0: ...`
 - 支持单一说话人脚本：`Speaker 0:` / `Speaker0:`（大小写不敏感）
 - 不支持多说话人：脚本里出现多个 `Speaker` 编号会返回 400
-- 默认对包含中文的文本做标点归一化，并按句号拆分为多行（保持同一 Speaker），可用 `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
+- 默认对包含中文的文本做标点归一化，可用 `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
 
 ## 其他配置（可选）
 

@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from vibevoice_docker.audio_formats import AudioFormat, audio_to_wav_bytes, wav_bytes_to_mp3_bytes
 from vibevoice_docker.model_manager import ModelId, ModelManager
 from vibevoice_docker.settings import Settings
-from vibevoice_docker.text_normalize import looks_like_speaker_script, normalize_and_split_single_speaker_script
+from vibevoice_docker.text_normalize import looks_like_speaker_script, normalize_single_speaker_script
 from vibevoice_docker.voices import VoiceStore
 
 
@@ -288,7 +288,7 @@ async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_ke
     if not looks_like_speaker_script(script):
         script = f"Speaker 0: {script}"
     try:
-        script = normalize_and_split_single_speaker_script(
+        script = normalize_single_speaker_script(
             script,
             enable_cn_punct_normalize=settings.enable_cn_punct_normalize,
         )
