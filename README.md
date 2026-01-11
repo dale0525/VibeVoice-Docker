@@ -18,6 +18,12 @@
 - `:1.5b`：1.5B（更省显存/更快）
 - `:7b`：7B（更慢/更吃显存）
 
+为避免“应用代码没怎么变，但更新镜像要重新拉 10GB+ 模型层”，本仓库把镜像拆成两层：
+- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b}`（尽量不频繁更新）
+- **app 镜像（服务代码）**：`ghcr.io/<owner>/vibevoice-docker:{1.5b|7b}`（频繁更新）
+
+本地部署只需要拉 app 镜像；base 层会作为共享 layer 自动复用（不需要手动拉 base）。
+
 ## 快速开始
 
 ### 1) 本地部署（推荐：直接拉 GHCR 镜像）
@@ -65,7 +71,8 @@ docker compose -f docker-compose.prod.7b.yml up -d
 6. Deploy
 
 更新方式：
-- RunPod 不会自动跟随提交更新；需要创建新的 GitHub Release 触发重新构建（参考官方文档 “Update your endpoint”；本仓库 push `vX.Y.Z` tag 时会自动创建对应 Release）
+- RunPod 不会自动跟随提交更新；需要创建新的 GitHub Release 触发重新构建（参考官方文档 “Update your endpoint”）
+- 本仓库每次 push `main` 构建完成后会自动创建 Release（tag 规则见下方），用于触发 RunPod 重新构建
 
 ## 使用（Web UI）
 
@@ -146,5 +153,8 @@ pixi run dev-7b
 ## 镜像 Tag 规则（简要）
 
 自动构建配置见 `.github/workflows/vibevoice-docker.yml`：
-- Push 到 `main`：更新 `:1.5b` / `:7b`（不带版本号，始终指向最新）
-- Push `vX.Y.Z` tag：额外生成 `:vX.Y.Z-1.5b` / `:vX.Y.Z-7b`（并自动创建对应 GitHub Release）
+- Push 到 `main`：
+  - 更新 `:1.5b` / `:7b`（不带版本号，始终指向最新）
+  - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b`（带版本号，便于固定部署版本）
+  - 自动创建 GitHub Release：`v0.0.<run_number>`
+- base 镜像（`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建

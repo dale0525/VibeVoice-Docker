@@ -6,11 +6,19 @@ on:
     paths:
       - "Dockerfile"
       - "Dockerfile.7b"
+      - "Dockerfile.base"
+      - "Dockerfile.app"
       - "requirements.txt"
       - "app/**"
       - "scripts/**"
       - "VibeVoice/**"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      rebuild_base:
+        description: "是否强制重建 base 镜像（依赖 + 模型大层）"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -31,6 +39,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # 需要 diff changed files 来判断是否重建 base 镜像
+          fetch-depth: 0
 
       - name: Show disk usage (before cleanup)
         run: |
@@ -75,9 +86,14 @@ jobs:
           # 版本号规则：v0.0.<GITHUB_RUN_NUMBER>
           VERSION="v0.0.${GITHUB_RUN_NUMBER}"
           IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker"
+          BASE_IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker-base"
           MODEL_TAG="${{ matrix.model_tag }}"
           {
             echo "image=${IMAGE}"
+            echo "base_image=${BASE_IMAGE}"
+            echo "base_ref=${BASE_IMAGE}:${MODEL_TAG}"
+            echo "base_cache_ref=${BASE_IMAGE}:buildcache-${MODEL_TAG}"
+            echo "app_cache_ref=${IMAGE}:buildcache-${MODEL_TAG}"
             echo "version=${VERSION}"
             echo "tags<<EOF"
             echo "${IMAGE}:${VERSION}-${MODEL_TAG}"
@@ -85,20 +101,70 @@ jobs:
             echo "EOF"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Build and push
+      - name: Decide whether to rebuild base image
+        id: base
+        shell: bash
+        run: |
+          set -euo pipefail
+          NEED_BASE="0"
+          BASE_REF="${{ steps.vars.outputs.base_ref }}"
+
+          # base 镜像不存在时必须先构建（例如首次运行）
+          if ! docker buildx imagetools inspect "${BASE_REF}" >/dev/null 2>&1; then
+            NEED_BASE="1"
+          fi
+
+          # 主动触发：workflow_dispatch 可强制重建
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${{ inputs.rebuild_base }}" == "true" ]]; then
+            NEED_BASE="1"
+          fi
+
+          # push 触发：若 base 相关文件变更，则重建 base
+          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+
+            if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+              CHANGED="$(git diff --name-only "${BEFORE}" "${AFTER}")"
+            else
+              CHANGED="$(git show --name-only --pretty='' "${AFTER}")"
+            fi
+
+            if echo "${CHANGED}" | grep -E '^(requirements\.txt|scripts/download_models\.py|Dockerfile\.base)$' >/dev/null; then
+              NEED_BASE="1"
+            fi
+          fi
+
+          echo "need_base=${NEED_BASE}" >> "${GITHUB_OUTPUT}"
+
+      - name: Build and push base image
+        if: steps.base.outputs.need_base == '1'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: Dockerfile.base
           build-args: |
             USE_CN_MIRRORS=0
             PIP_INDEX_URL=https://pypi.org/simple/
             VIBEVOICE_MODEL_ID=${{ matrix.model_id }}
           push: true
+          tags: ${{ steps.vars.outputs.base_ref }}
+          # 使用 GHCR 作为 build cache 存储，避免 GHA cache 体积/并发导致的缺 blob 问题
+          cache-from: type=registry,ref=${{ steps.vars.outputs.base_cache_ref }}
+          cache-to: type=registry,ref=${{ steps.vars.outputs.base_cache_ref }},mode=max
+
+      - name: Build and push app image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.app
+          build-args: |
+            BASE_IMAGE=${{ steps.vars.outputs.base_ref }}
+          push: true
           tags: ${{ steps.vars.outputs.tags }}
           # 使用 GHCR 作为 build cache 存储，避免 GHA cache 体积/并发导致的缺 blob 问题
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibevoice-docker:buildcache-${{ matrix.model_tag }}
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository_owner }}/vibevoice-docker:buildcache-${{ matrix.model_tag }},mode=max
+          cache-from: type=registry,ref=${{ steps.vars.outputs.app_cache_ref }}
+          cache-to: type=registry,ref=${{ steps.vars.outputs.app_cache_ref }},mode=max
 
   release:
     name: create-github-release

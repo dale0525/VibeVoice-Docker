@@ -1,0 +1,46 @@
+FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+
+# 构建参数：默认使用国内镜像源（可在 docker build 时通过 --build-arg 覆盖）
+ARG USE_CN_MIRRORS=1
+ARG APT_MIRROR_HOST=mirrors.aliyun.com
+ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN set -eux; \
+    if [ "${USE_CN_MIRRORS}" = "1" ]; then \
+        for f in /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources; do \
+            [ -f "$f" ] || continue; \
+            sed -i \
+                -e "s@archive.ubuntu.com@${APT_MIRROR_HOST}@g" \
+                -e "s@security.ubuntu.com@${APT_MIRROR_HOST}@g" \
+                -e "s@deb.debian.org@${APT_MIRROR_HOST}@g" \
+                -e "s@security.debian.org@${APT_MIRROR_HOST}@g" \
+                "$f"; \
+        done; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libsndfile1 \
+        ca-certificates; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+
+# 依赖尽量放在 base 镜像，应用镜像更新时可复用
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# 在 base 镜像构建阶段下载模型（尽量保持该镜像不频繁更新，避免本地部署反复拉取大层）
+ARG VIBEVOICE_MODEL_ID=vibevoice-1.5b
+ENV VIBEVOICE_MODEL_ID=${VIBEVOICE_MODEL_ID}
+ENV VIBEVOICE_MODELS_DIR=/models
+
+# ModelScope 缓存写到临时目录，构建结束前清理，避免把 cache 打进镜像层导致不稳定/变大
+ENV MODELSCOPE_CACHE=/tmp/modelscope-cache
+
+COPY scripts/download_models.py /opt/scripts/download_models.py
+RUN python /opt/scripts/download_models.py; \
+    rm -rf /tmp/modelscope-cache
+
