@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import os
 import re
 
 
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _SPEAKER_LINE_RE = re.compile(r"^\s*Speaker\s*(\d+)\s*:\s*(.*)$", re.IGNORECASE)
+
+_ENV_SCRIPT_LINE_MAX_CHARS = "VIBEVOICE_SCRIPT_LINE_MAX_CHARS"
+_DEFAULT_SCRIPT_LINE_MAX_CHARS = 150
+_SPLIT_BREAK_CHAR = "."
 
 
 def contains_cjk(text: str) -> bool:
@@ -94,6 +99,53 @@ def looks_like_speaker_script(text: str) -> bool:
     first = next((line.strip() for line in text.splitlines() if line.strip()), "")
     return bool(_SPEAKER_LINE_RE.match(first))
 
+def _get_script_line_max_chars() -> int:
+    """
+    获取单一 Speaker 脚本单行文本长度上限（按 Python 字符数 len 计）。
+
+    - 默认：150
+    - 通过环境变量覆盖：VIBEVOICE_SCRIPT_LINE_MAX_CHARS
+    - 设置为 0 或负数：禁用自动拆分
+    """
+    raw = (os.environ.get(_ENV_SCRIPT_LINE_MAX_CHARS) or "").strip()
+    if not raw:
+        return _DEFAULT_SCRIPT_LINE_MAX_CHARS
+    try:
+        return int(raw)
+    except ValueError:
+        return _DEFAULT_SCRIPT_LINE_MAX_CHARS
+
+
+def _split_text_by_max_chars(text: str, max_chars: int) -> list[str]:
+    if max_chars <= 0 or len(text) <= max_chars:
+        return [text]
+
+    remaining = text
+    parts: list[str] = []
+    min_cut = max(1, max_chars // 2)
+
+    while len(remaining) > max_chars:
+        cut_at = None
+
+        period_idx = remaining.rfind(_SPLIT_BREAK_CHAR, min_cut, max_chars)
+        if period_idx >= 0:
+            cut_at = period_idx + 1
+
+        if cut_at is None:
+            cut_at = max_chars
+
+        head = remaining[:cut_at].strip()
+        if head:
+            parts.append(head)
+        remaining = remaining[cut_at:].strip()
+
+        if not remaining:
+            break
+
+    if remaining:
+        parts.append(remaining)
+    return parts
+
 
 def normalize_single_speaker_script(script: str, *, enable_cn_punct_normalize: bool) -> str:
     """
@@ -111,6 +163,7 @@ def normalize_single_speaker_script(script: str, *, enable_cn_punct_normalize: b
     out_lines: list[str] = []
     speaker_ids: set[int] = set()
     current_speaker_id: int | None = None
+    max_chars_per_line = _get_script_line_max_chars()
 
     for raw_line in script.splitlines():
         line = raw_line.strip()
@@ -137,7 +190,8 @@ def normalize_single_speaker_script(script: str, *, enable_cn_punct_normalize: b
 
         cleaned = text.strip()
         if cleaned:
-            out_lines.append(f"Speaker {speaker_id}: {cleaned}")
+            for part in _split_text_by_max_chars(cleaned, max_chars_per_line):
+                out_lines.append(f"Speaker {speaker_id}: {part}")
 
     if not out_lines:
         raise ValueError("No valid content found in input.")

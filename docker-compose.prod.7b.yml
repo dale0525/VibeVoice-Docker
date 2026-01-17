@@ -11,6 +11,7 @@ services:
       - VIBEVOICE_WARMUP_ON_PRELOAD=true
       - VIBEVOICE_IDLE_UNLOAD_SECONDS=900
       - VIBEVOICE_MAX_LOADED_MODELS=1
+      - VIBEVOICE_SCRIPT_LINE_MAX_CHARS=150
     deploy:
       resources:
         reservations:

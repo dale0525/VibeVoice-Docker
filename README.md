@@ -122,6 +122,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - 支持单一说话人脚本：`Speaker 0:` / `Speaker0:`（大小写不敏感）
 - 不支持多说话人：脚本里出现多个 `Speaker` 编号会返回 400
 - 默认对包含中文的文本做标点归一化，可用 `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
+- 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `VIBEVOICE_SCRIPT_LINE_MAX_CHARS` 配置
 
 ## 其他配置（可选）
 
@@ -131,6 +132,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `VIBEVOICE_WARMUP_ON_PRELOAD=false`：关闭预热（启动更快）
 - `VIBEVOICE_EXIT_ON_IDLE_SECONDS=30`：空闲自动退出（Serverless 常用）
 - `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false`：关闭中文标点归一化
+- `VIBEVOICE_SCRIPT_LINE_MAX_CHARS=150`：单一 Speaker 脚本的单行最大字符数（超过则优先按句号 `.` 自动拆分为多行）
 
 目录（一般不需要改）：
 - `VIBEVOICE_DATA_DIR`：默认 `/data`
