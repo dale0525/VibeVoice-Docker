@@ -3,7 +3,7 @@
 
 环境变量：
 - VIBEVOICE_MODELS_DIR: 模型落盘目录，默认 /models
-- VIBEVOICE_MODEL_ID: 模型选择（vibevoice-1.5b / vibevoice-7b / moss-ttsd-v1.0）
+- VIBEVOICE_MODEL_ID: 模型选择（vibevoice-1.5b / vibevoice-7b / moss-ttsd-v1.0 / cosyvoice3-0.5b）
 - VIBEVOICE_MODELSCOPE_REVISION: ModelScope revision（可选）
 - MODELSCOPE_CACHE: ModelScope 下载缓存目录（建议指向临时目录）
 - VIBEVOICE_EXPECTED_INDEX_SHA256: 仅对 VibeVoice 生效，可覆盖默认 sha256 校验值
@@ -40,6 +40,8 @@ def _normalize_model_id(value: Optional[str]) -> str:
         return "vibevoice-7b"
     if v in {"moss-ttsd-v1.0", "moss_ttsd", "moss-ttsd", "moss"}:
         return "moss-ttsd-v1.0"
+    if v in {"cosyvoice3-0.5b", "cosyvoice3", "cosy3", "fun-cosyvoice3-0.5b"}:
+        return "cosyvoice3-0.5b"
     raise ValueError(f"Unsupported VIBEVOICE_MODEL_ID: {value!r}")
 
 
@@ -78,6 +80,13 @@ def _build_targets(model_id: str) -> list[DownloadTarget]:
                 repo_id="openmoss/MOSS-Audio-Tokenizer",
                 local_dir_name="MOSS-Audio-Tokenizer",
             ),
+        ]
+    if model_id == "cosyvoice3-0.5b":
+        return [
+            DownloadTarget(
+                repo_id="FunAudioLLM/Fun-CosyVoice3-0.5B-2512",
+                local_dir_name="Fun-CosyVoice3-0.5B",
+            )
         ]
     raise ValueError(f"Unsupported model_id: {model_id!r}")
 

@@ -22,27 +22,19 @@ RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
         ffmpeg \
+        git \
         libsndfile1 \
         ca-certificates; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt
 
-# 依赖尽量放在 base 镜像，应用镜像更新时可复用
-ARG VIBEVOICE_MODEL_ID=vibevoice-1.5b
+# 先安装最小依赖，确保后续下载模型步骤可缓存
+ARG VIBEVOICE_MODEL_ID=cosyvoice3-0.5b
 COPY requirements.txt /tmp/requirements.txt
 RUN set -eux; \
     pip install --no-cache-dir -r /tmp/requirements.txt; \
-    if [ "${VIBEVOICE_MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
-      pip install --no-cache-dir \
-        "transformers==5.0.0" \
-        "safetensors==0.6.2" \
-        "soundfile==0.13.1" \
-        "torchaudio==2.3.1" \
-        "tiktoken==0.12.0" \
-        "einops==0.8.1"; \
-    elif [ "${VIBEVOICE_MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
-      pip install --no-cache-dir \
+    pip install --no-cache-dir \
         "conformer==0.3.2" \
         "diffusers==0.29.0" \
         "hyperpyyaml==1.2.3" \
@@ -57,26 +49,34 @@ RUN set -eux; \
         "torchaudio==2.3.1" \
         "transformers==4.51.3" \
         "wetext==0.0.4" \
-        "x-transformers==2.11.24"; \
-    fi
+        "x-transformers==2.11.24"
 
-# 在 base 镜像构建阶段下载模型（尽量保持该镜像不频繁更新，避免本地部署反复拉取大层）
+# 在镜像构建阶段下载模型（尽量靠前，避免调试改代码时反复下载）
 ENV VIBEVOICE_MODEL_ID=${VIBEVOICE_MODEL_ID}
 ENV VIBEVOICE_MODELS_DIR=/models
-
-# ModelScope 缓存写到临时目录，构建结束前清理，避免把 cache 打进镜像层导致不稳定/变大
-ENV MODELSCOPE_CACHE=/tmp/modelscope-cache
-
+ENV MODELSCOPE_CACHE=/models/modelscope-cache
 COPY scripts/download_models.py /opt/scripts/download_models.py
-RUN python /opt/scripts/download_models.py; \
-    rm -rf /tmp/modelscope-cache
+RUN python /opt/scripts/download_models.py
 
 RUN set -eux; \
-    if [ "${VIBEVOICE_MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
-      apt-get update; \
-      apt-get install -y --no-install-recommends git; \
-      rm -rf /var/lib/apt/lists/*; \
-      git clone --depth 1 https://github.com/FunAudioLLM/CosyVoice.git /opt/CosyVoice; \
-      cd /opt/CosyVoice; \
-      git submodule update --init --recursive; \
-    fi
+    git clone --depth 1 https://github.com/FunAudioLLM/CosyVoice.git /opt/CosyVoice; \
+    cd /opt/CosyVoice; \
+    git submodule update --init --recursive
+
+# 安装 VibeVoice 源码（仅复用 demo 音色与兼容目录结构）
+RUN mkdir -p /opt/VibeVoice/demo
+COPY VibeVoice/pyproject.toml VibeVoice/README.md VibeVoice/LICENSE /opt/VibeVoice/
+COPY VibeVoice/vibevoice /opt/VibeVoice/vibevoice
+COPY VibeVoice/demo/voices /opt/VibeVoice/demo/voices
+RUN pip install --no-cache-dir --no-deps -e /opt/VibeVoice
+
+# 复制服务端代码
+COPY app /app
+WORKDIR /app
+
+ENV VIBEVOICE_DATA_DIR=/data
+ENV VIBEVOICE_VOICES_DIR=/data/voices
+ENV VIBEVOICE_BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
+
+EXPOSE 8000 80
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1

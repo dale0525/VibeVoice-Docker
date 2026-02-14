@@ -16,6 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
 from vibevoice_docker.audio_formats import AudioFormat, audio_to_wav_bytes, wav_bytes_to_mp3_bytes
+from vibevoice_docker.cosyvoice_adapter import build_cosy_prompt_text, speaker_script_to_cosy_text
 from vibevoice_docker.moss_adapter import build_moss_prompt_text, speaker_script_to_moss_text
 from vibevoice_docker.model_manager import ModelId, ModelManager
 from vibevoice_docker.settings import Settings
@@ -167,7 +168,12 @@ def _cuda_available() -> bool:
 @app.get("/v1/models")
 def list_models(_: None = Depends(require_api_key)) -> dict[str, Any]:
     now = int(time.time())
-    owned_by = "openmoss" if settings.model_id == "moss-ttsd-v1.0" else "vibevoice"
+    if settings.model_id == "moss-ttsd-v1.0":
+        owned_by = "openmoss"
+    elif settings.model_id == "cosyvoice3-0.5b":
+        owned_by = "funaudiollm"
+    else:
+        owned_by = "vibevoice"
     return {
         "object": "list",
         "data": [
@@ -540,6 +546,31 @@ def _decode_moss_audio(processor, outputs):
     return torch.cat(wav_segments, dim=0).numpy()
 
 
+def _decode_cosyvoice_audio(outputs):
+    import torch
+
+    wav_segments = []
+    for out in outputs:
+        if not isinstance(out, dict):
+            continue
+
+        wav = out.get("tts_speech")
+        if wav is None:
+            continue
+
+        if isinstance(wav, torch.Tensor):
+            segment = wav.detach().to(dtype=torch.float32, device="cpu").reshape(-1)
+        else:
+            segment = torch.tensor(wav, dtype=torch.float32).reshape(-1)
+
+        if segment.numel() > 0:
+            wav_segments.append(segment)
+
+    if not wav_segments:
+        raise RuntimeError("No audio generated")
+    return torch.cat(wav_segments, dim=0).numpy()
+
+
 def _run_inference_moss_ttsd(loaded, script: str, voice: Voice):
     import torch
 
@@ -578,10 +609,28 @@ def _run_inference_moss_ttsd(loaded, script: str, voice: Voice):
     return _decode_moss_audio(processor, outputs), sample_rate
 
 
+def _run_inference_cosyvoice3(loaded, script: str, voice: Voice):
+    cosyvoice = loaded.model
+    sample_rate = int(loaded.sample_rate)
+
+    cosy_text = speaker_script_to_cosy_text(script)
+    prompt_text = build_cosy_prompt_text(voice.prompt_text, cosy_text)
+    outputs = cosyvoice.inference_zero_shot(
+        cosy_text,
+        prompt_text,
+        str(voice.sample_path),
+        stream=False,
+        text_frontend=True,
+    )
+    return _decode_cosyvoice_audio(outputs), sample_rate
+
+
 def _run_inference(model_id: ModelId, script: str, voice: Voice, cfg_scale: float):
     loaded = model_manager.get(model_id)
     if loaded.backend == "moss-ttsd":
         return _run_inference_moss_ttsd(loaded, script=script, voice=voice)
+    if loaded.backend == "cosyvoice3":
+        return _run_inference_cosyvoice3(loaded, script=script, voice=voice)
     return _run_inference_vibevoice(loaded, script=script, voice=voice, cfg_scale=cfg_scale)
 
 

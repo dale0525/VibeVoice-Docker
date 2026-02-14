@@ -7,6 +7,7 @@ on:
       - "Dockerfile"
       - "Dockerfile.7b"
       - "Dockerfile.moss"
+      - "Dockerfile.cosy"
       - "Dockerfile.base"
       - "Dockerfile.app"
       - "requirements.txt"
@@ -39,6 +40,8 @@ jobs:
             model_id: "vibevoice-7b"
           - model_tag: "moss-ttsd-v1.0"
             model_id: "moss-ttsd-v1.0"
+          - model_tag: "cosyvoice3-0.5b"
+            model_id: "cosyvoice3-0.5b"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -195,6 +198,7 @@ jobs:
           - ${IMAGE}:${TAG}-1.5b
           - ${IMAGE}:${TAG}-7b
           - ${IMAGE}:${TAG}-moss-ttsd-v1.0
+          - ${IMAGE}:${TAG}-cosyvoice3-0.5b
           EOF
 
           if gh release view "${TAG}" >/dev/null 2>&1; then

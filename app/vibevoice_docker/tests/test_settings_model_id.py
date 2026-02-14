@@ -13,6 +13,10 @@ class TestNormalizeModelId(unittest.TestCase):
         self.assertEqual("moss-ttsd-v1.0", _normalize_model_id("moss_ttsd", "vibevoice-1.5b"))
         self.assertEqual("moss-ttsd-v1.0", _normalize_model_id("moss", "vibevoice-1.5b"))
 
+    def test_supports_cosyvoice3_aliases(self) -> None:
+        self.assertEqual("cosyvoice3-0.5b", _normalize_model_id("cosyvoice3-0.5b", "vibevoice-1.5b"))
+        self.assertEqual("cosyvoice3-0.5b", _normalize_model_id("cosyvoice3", "vibevoice-1.5b"))
+        self.assertEqual("cosyvoice3-0.5b", _normalize_model_id("cosy3", "vibevoice-1.5b"))
+
     def test_unknown_value_falls_back_to_default(self) -> None:
         self.assertEqual("vibevoice-7b", _normalize_model_id("unknown-model", "vibevoice-7b"))
-

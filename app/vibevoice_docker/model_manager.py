@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -11,8 +12,8 @@ from typing import Any, Literal
 import torch
 
 
-ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "moss-ttsd-v1.0"]
-BackendId = Literal["vibevoice", "moss-ttsd"]
+ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "moss-ttsd-v1.0", "cosyvoice3-0.5b"]
+BackendId = Literal["vibevoice", "moss-ttsd", "cosyvoice3"]
 logger = logging.getLogger("vibevoice_docker.model_manager")
 
 
@@ -44,6 +45,8 @@ class ModelManager:
             return self._models_dir / "VibeVoice-7B"
         if model_id == "moss-ttsd-v1.0":
             return self._models_dir / "MOSS-TTSD-v1.0"
+        if model_id == "cosyvoice3-0.5b":
+            return self._models_dir / "Fun-CosyVoice3-0.5B"
         raise ValueError(f"Unsupported model: {model_id}")
 
     def resolve_codec_path(self, model_id: ModelId) -> Path | None:
@@ -57,6 +60,8 @@ class ModelManager:
     def _detect_backend(self, model_id: ModelId) -> BackendId:
         if model_id == "moss-ttsd-v1.0":
             return "moss-ttsd"
+        if model_id == "cosyvoice3-0.5b":
+            return "cosyvoice3"
         return "vibevoice"
 
     def _load_vibevoice(self, model_path: Path, device: str, dtype: torch.dtype) -> tuple[Any, Any, int]:
@@ -118,6 +123,35 @@ class ModelManager:
         sample_rate = int(getattr(processor.model_config, "sampling_rate", 24000))
         return processor, model, sample_rate
 
+    def _load_cosyvoice3(
+        self,
+        model_path: Path,
+        device: str,
+        dtype: torch.dtype,
+    ) -> tuple[Any, Any, int]:
+        cosyvoice_root = Path("/opt/CosyVoice")
+        matcha_root = cosyvoice_root / "third_party" / "Matcha-TTS"
+
+        if cosyvoice_root.exists():
+            cosyvoice_root_str = str(cosyvoice_root)
+            if cosyvoice_root_str not in sys.path:
+                sys.path.append(cosyvoice_root_str)
+
+        if matcha_root.exists():
+            matcha_root_str = str(matcha_root)
+            if matcha_root_str not in sys.path:
+                sys.path.append(matcha_root_str)
+
+        try:
+            from cosyvoice.cli.cosyvoice import AutoModel
+        except Exception as exc:  # pragma: no cover - depends on image flavor
+            raise RuntimeError("CosyVoice3 backend dependencies are unavailable in this image.") from exc
+
+        fp16 = device == "cuda" and dtype in {torch.float16, torch.bfloat16}
+        model = AutoModel(model_dir=str(model_path), fp16=fp16)
+        sample_rate = int(getattr(model, "sample_rate", 24000))
+        return None, model, sample_rate
+
     def get(self, model_id: ModelId) -> LoadedModel:
         with self._lock:
             loaded = self._loaded.get(model_id)
@@ -148,11 +182,17 @@ class ModelManager:
 
             if backend == "vibevoice":
                 processor, model, sample_rate = self._load_vibevoice(model_path, device=device, dtype=dtype)
-            else:
+            elif backend == "moss-ttsd":
                 assert codec_path is not None
                 processor, model, sample_rate = self._load_moss_ttsd(
                     model_path=model_path,
                     codec_path=codec_path,
+                    device=device,
+                    dtype=dtype,
+                )
+            else:
+                processor, model, sample_rate = self._load_cosyvoice3(
+                    model_path=model_path,
                     device=device,
                     dtype=dtype,
                 )

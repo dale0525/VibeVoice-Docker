@@ -41,6 +41,23 @@ RUN set -eux; \
             "torchaudio==2.3.1" \
             "tiktoken==0.12.0" \
             "einops==0.8.1"; \
+    elif [ "${VIBEVOICE_MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
+        pip install --no-cache-dir \
+            "conformer==0.3.2" \
+            "diffusers==0.29.0" \
+            "hyperpyyaml==1.2.3" \
+            "inflect==7.3.1" \
+            "librosa==0.10.2" \
+            "numpy==1.26.4" \
+            "omegaconf==2.3.0" \
+            "onnx==1.16.0" \
+            "onnxruntime-gpu==1.18.0" \
+            "openai-whisper==20231117" \
+            "tiktoken==0.12.0" \
+            "torchaudio==2.3.1" \
+            "transformers==4.51.3" \
+            "wetext==0.0.4" \
+            "x-transformers==2.11.24"; \
     fi
 
 # 在镜像构建阶段下载模型（尽量靠前，避免调试改代码时反复下载）
@@ -49,6 +66,16 @@ ENV VIBEVOICE_MODELS_DIR=/models
 ENV MODELSCOPE_CACHE=/models/modelscope-cache
 COPY scripts/download_models.py /opt/scripts/download_models.py
 RUN python /opt/scripts/download_models.py
+
+RUN set -eux; \
+    if [ "${VIBEVOICE_MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
+        apt-get update; \
+        apt-get install -y --no-install-recommends git; \
+        rm -rf /var/lib/apt/lists/*; \
+        git clone --depth 1 https://github.com/FunAudioLLM/CosyVoice.git /opt/CosyVoice; \
+        cd /opt/CosyVoice; \
+        git submodule update --init --recursive; \
+    fi
 
 # 安装 VibeVoice 源码（直接使用仓库内置的 VibeVoice 目录）
 RUN mkdir -p /opt/VibeVoice/demo

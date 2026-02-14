@@ -1,6 +1,6 @@
 # VibeVoice-Docker
 
-将 VibeVoice / MOSS-TTSD 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
+将 VibeVoice / MOSS-TTSD / CosyVoice3 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
 
 ## 功能
 
@@ -20,10 +20,11 @@
 - `:1.5b`：1.5B（更省显存/更快）
 - `:7b`：7B（更慢/更吃显存）
 - `:moss-ttsd-v1.0`：MOSS-TTSD v1.0（长对话场景更强）
+- `:cosyvoice3-0.5b`：Fun-CosyVoice3 0.5B（跨语种/语音风格控制更强）
 
 为避免“应用代码没怎么变，但更新镜像要重新拉 10GB+ 模型层”，本仓库把镜像拆成两层：
-- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0}`（尽量不频繁更新）
-- **app 镜像（服务代码）**：`ghcr.io/<owner>/vibevoice-docker:{1.5b|7b|moss-ttsd-v1.0}`（频繁更新）
+- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（尽量不频繁更新）
+- **app 镜像（服务代码）**：`ghcr.io/<owner>/vibevoice-docker:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（频繁更新）
 
 本地部署只需要拉 app 镜像；base 层会作为共享 layer 自动复用（不需要手动拉 base）。
 
@@ -53,6 +54,12 @@ docker compose -f docker-compose.prod.7b.yml up -d
 docker compose -f docker-compose.prod.moss.yml up -d
 ```
 
+切换到 CosyVoice3 0.5B：
+
+```bash
+docker compose -f docker-compose.prod.cosyvoice3.yml up -d
+```
+
 访问：
 - Web UI：`http://localhost:8000/`
 - 健康检查：`http://localhost:8000/healthz`
@@ -72,6 +79,7 @@ docker compose -f docker-compose.prod.moss.yml up -d
    - 1.5B：`Dockerfile`
    - 7B：`Dockerfile.7b`
    - MOSS-TTSD v1.0：`Dockerfile.moss`
+   - CosyVoice3 0.5B：`Dockerfile.cosy`
 4. Endpoint Type 选 **Load Balancer**
 5. 建议环境变量：
    - `VIBEVOICE_API_KEY=<your-key>`（推荐：防止公开 endpoint 被盗用；设置后要求请求头 `Authorization: Bearer <key>`，Web UI 支持填写）
@@ -151,7 +159,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `voice`：来自 `GET /v1/voices` 的 `id`
 - `input`：普通文本或单一说话人的 `Speaker N:` 脚本
 - `response_format`：`wav`（默认）或 `mp3`
-- `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（MOSS-TTSD 会忽略该参数）
+- `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（MOSS-TTSD / CosyVoice3 会忽略该参数）
 
 ## 文本输入规则（重要）
 
@@ -161,6 +169,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - 默认对包含中文的文本做标点归一化，可用 `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
 - 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `VIBEVOICE_SCRIPT_LINE_MAX_CHARS` 配置
 - MOSS-TTSD 模式下会自动把单说话人脚本映射为 `[S1] ...`，并用音色的 `prompt_text`（若提供）增强克隆稳定性
+- CosyVoice3 模式下会自动把单说话人脚本还原为普通文本，并优先使用音色的 `prompt_text` 作为参考音频文本（未提供时自动回退为目标文本首句）
 
 ## 其他配置（可选）
 
@@ -196,11 +205,17 @@ MOSS-TTSD：
 pixi run dev-moss
 ```
 
+CosyVoice3 0.5B：
+
+```bash
+pixi run dev-cosy3
+```
+
 ## 镜像 Tag 规则（简要）
 
 自动构建配置见 `.github/workflows/vibevoice-docker.yml`：
 - Push 到 `main`：
-  - 更新 `:1.5b` / `:7b` / `:moss-ttsd-v1.0`（不带版本号，始终指向最新）
-  - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b` / `:v0.0.<run_number>-moss-ttsd-v1.0`（带版本号，便于固定部署版本）
+  - 更新 `:1.5b` / `:7b` / `:moss-ttsd-v1.0` / `:cosyvoice3-0.5b`（不带版本号，始终指向最新）
+  - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b` / `:v0.0.<run_number>-moss-ttsd-v1.0` / `:v0.0.<run_number>-cosyvoice3-0.5b`（带版本号，便于固定部署版本）
   - 自动创建 GitHub Release：`v0.0.<run_number>`
-- base 镜像（`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建
+- base 镜像（`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建
