@@ -21,6 +21,7 @@ from vibevoice_docker.moss_adapter import build_moss_prompt_text, speaker_script
 from vibevoice_docker.model_manager import ModelId, ModelManager
 from vibevoice_docker.settings import Settings
 from vibevoice_docker.text_normalize import looks_like_speaker_script, normalize_single_speaker_script
+from vibevoice_docker.torch_compat import ensure_pad_sequence_padding_side_support
 from vibevoice_docker.voices import Voice, VoiceStore
 
 
@@ -573,6 +574,8 @@ def _decode_cosyvoice_audio(outputs):
 
 def _run_inference_moss_ttsd(loaded, script: str, voice: Voice):
     import torch
+
+    ensure_pad_sequence_padding_side_support(torch_mod=torch)
 
     processor = loaded.processor
     model = loaded.model
