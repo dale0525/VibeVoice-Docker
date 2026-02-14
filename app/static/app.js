@@ -166,6 +166,7 @@ generateBtn.addEventListener("click", generateSpeech);
 
 async function createVoice() {
   const name = document.getElementById("voiceName").value.trim();
+  const promptText = document.getElementById("voicePromptText").value.trim();
   const fileInput = document.getElementById("voiceFile");
   const file = fileInput.files && fileInput.files[0];
 
@@ -183,6 +184,9 @@ async function createVoice() {
     const form = new FormData();
     form.append("name", name);
     form.append("file", file, file.name);
+    if (promptText) {
+      form.append("prompt_text", promptText);
+    }
 
     const res = await fetch("/v1/voices", {
       method: "POST",

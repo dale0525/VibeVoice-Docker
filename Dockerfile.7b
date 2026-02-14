@@ -29,11 +29,21 @@ RUN set -eux; \
 WORKDIR /opt
 
 # 先安装最小依赖，确保后续下载模型步骤可缓存
+ARG VIBEVOICE_MODEL_ID=vibevoice-7b
 COPY requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+RUN set -eux; \
+    pip install --no-cache-dir -r /tmp/requirements.txt; \
+    if [ "${VIBEVOICE_MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
+        pip install --no-cache-dir \
+            "transformers==5.0.0" \
+            "safetensors==0.6.2" \
+            "soundfile==0.13.1" \
+            "torchaudio==2.3.1" \
+            "tiktoken==0.12.0" \
+            "einops==0.8.1"; \
+    fi
 
 # 在镜像构建阶段下载模型（尽量靠前，避免调试改代码时反复下载）
-ARG VIBEVOICE_MODEL_ID=vibevoice-7b
 ENV VIBEVOICE_MODEL_ID=${VIBEVOICE_MODEL_ID}
 ENV VIBEVOICE_MODELS_DIR=/models
 ENV MODELSCOPE_CACHE=/models/modelscope-cache

@@ -20,7 +20,7 @@ def _env_int(value: str | None, default: int) -> int:
         return default
 
 
-ModelId = Literal["vibevoice-1.5b", "vibevoice-7b"]
+ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "moss-ttsd-v1.0"]
 
 
 def _normalize_model_id(value: str | None, default: ModelId) -> ModelId:
@@ -31,6 +31,8 @@ def _normalize_model_id(value: str | None, default: ModelId) -> ModelId:
         return "vibevoice-1.5b"
     if v in {"vibevoice-7b", "7b", "vibevoice-7"}:
         return "vibevoice-7b"
+    if v in {"moss-ttsd-v1.0", "moss_ttsd", "moss-ttsd", "moss"}:
+        return "moss-ttsd-v1.0"
     return default
 
 

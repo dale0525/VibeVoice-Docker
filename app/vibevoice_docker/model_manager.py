@@ -6,25 +6,26 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Lock
-from typing import Literal
+from typing import Any, Literal
 
 import torch
 
-from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
-from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
 
-
-ModelId = Literal["vibevoice-1.5b", "vibevoice-7b"]
+ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "moss-ttsd-v1.0"]
+BackendId = Literal["vibevoice", "moss-ttsd"]
 logger = logging.getLogger("vibevoice_docker.model_manager")
 
 
 @dataclass
 class LoadedModel:
     model_id: ModelId
+    backend: BackendId
     model_path: Path
+    codec_path: Path | None
     device: str
-    processor: VibeVoiceProcessor
-    model: VibeVoiceForConditionalGenerationInference
+    sample_rate: int
+    processor: Any
+    model: Any
     last_used_at: float
 
 
@@ -41,10 +42,81 @@ class ModelManager:
             return self._models_dir / "VibeVoice-1.5B"
         if model_id == "vibevoice-7b":
             return self._models_dir / "VibeVoice-7B"
+        if model_id == "moss-ttsd-v1.0":
+            return self._models_dir / "MOSS-TTSD-v1.0"
         raise ValueError(f"Unsupported model: {model_id}")
+
+    def resolve_codec_path(self, model_id: ModelId) -> Path | None:
+        if model_id == "moss-ttsd-v1.0":
+            return self._models_dir / "MOSS-Audio-Tokenizer"
+        return None
 
     def _pick_device(self) -> str:
         return "cuda" if torch.cuda.is_available() else "cpu"
+
+    def _detect_backend(self, model_id: ModelId) -> BackendId:
+        if model_id == "moss-ttsd-v1.0":
+            return "moss-ttsd"
+        return "vibevoice"
+
+    def _load_vibevoice(self, model_path: Path, device: str, dtype: torch.dtype) -> tuple[Any, Any, int]:
+        try:
+            from vibevoice.modular.modeling_vibevoice_inference import VibeVoiceForConditionalGenerationInference
+            from vibevoice.processor.vibevoice_processor import VibeVoiceProcessor
+        except Exception as exc:  # pragma: no cover - depends on image flavor
+            raise RuntimeError("VibeVoice backend dependencies are unavailable in this image.") from exc
+
+        processor = VibeVoiceProcessor.from_pretrained(str(model_path))
+        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
+            str(model_path),
+            torch_dtype=dtype,
+            device_map=device,
+            attn_implementation="sdpa",
+        )
+        model.eval()
+        model.set_ddpm_inference_steps(num_steps=10)
+        return processor, model, 24000
+
+    def _load_moss_ttsd(
+        self,
+        model_path: Path,
+        codec_path: Path,
+        device: str,
+        dtype: torch.dtype,
+    ) -> tuple[Any, Any, int]:
+        try:
+            from transformers import AutoModel, AutoProcessor
+        except Exception as exc:  # pragma: no cover - depends on image flavor
+            raise RuntimeError("MOSS-TTSD backend requires transformers>=5 with trust_remote_code support.") from exc
+
+        processor = AutoProcessor.from_pretrained(
+            str(model_path),
+            trust_remote_code=True,
+            codec_path=str(codec_path),
+        )
+        if getattr(processor, "audio_tokenizer", None) is not None:
+            processor.audio_tokenizer = processor.audio_tokenizer.to(device)
+            processor.audio_tokenizer.eval()
+
+        def _load_with_attn(attn_implementation: str):
+            return AutoModel.from_pretrained(
+                str(model_path),
+                trust_remote_code=True,
+                attn_implementation=attn_implementation,
+                torch_dtype=dtype,
+            ).to(device)
+
+        if device == "cuda":
+            try:
+                model = _load_with_attn("flash_attention_2")
+            except Exception:
+                model = _load_with_attn("sdpa")
+        else:
+            model = _load_with_attn("sdpa")
+
+        model.eval()
+        sample_rate = int(getattr(processor.model_config, "sampling_rate", 24000))
+        return processor, model, sample_rate
 
     def get(self, model_id: ModelId) -> LoadedModel:
         with self._lock:
@@ -53,7 +125,6 @@ class ModelManager:
                 loaded.last_used_at = time.time()
                 return loaded
 
-            # 仅保留有限数量的已加载模型，避免显存/内存被占满
             while len(self._loaded) >= self._max_loaded_models:
                 lru_id, lru_model = min(self._loaded.items(), key=lambda kv: kv[1].last_used_at)
                 self._unload_locked(lru_id, lru_model)
@@ -64,26 +135,37 @@ class ModelManager:
                     f"模型未找到：{model_path}。请确认镜像构建时已下载模型，或挂载了正确的模型目录。"
                 )
 
+            codec_path = self.resolve_codec_path(model_id)
+            if codec_path is not None and not codec_path.exists():
+                raise FileNotFoundError(f"Codec 模型未找到：{codec_path}")
+
+            backend = self._detect_backend(model_id)
             device = self._pick_device()
             dtype = torch.bfloat16 if device == "cuda" else torch.float32
 
             started_at = time.perf_counter()
-            logger.info("Loading model %s from %s (device=%s dtype=%s)", model_id, model_path, device, dtype)
-            processor = VibeVoiceProcessor.from_pretrained(str(model_path))
-            model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-                str(model_path),
-                torch_dtype=dtype,
-                device_map=device,
-                attn_implementation="sdpa",
-            )
-            model.eval()
-            model.set_ddpm_inference_steps(num_steps=10)
+            logger.info("Loading model %s from %s (backend=%s device=%s dtype=%s)", model_id, model_path, backend, device, dtype)
+
+            if backend == "vibevoice":
+                processor, model, sample_rate = self._load_vibevoice(model_path, device=device, dtype=dtype)
+            else:
+                assert codec_path is not None
+                processor, model, sample_rate = self._load_moss_ttsd(
+                    model_path=model_path,
+                    codec_path=codec_path,
+                    device=device,
+                    dtype=dtype,
+                )
+
             logger.info("Loaded model %s in %.1fs", model_id, time.perf_counter() - started_at)
 
             loaded = LoadedModel(
                 model_id=model_id,
+                backend=backend,
                 model_path=model_path,
+                codec_path=codec_path,
                 device=device,
+                sample_rate=sample_rate,
                 processor=processor,
                 model=model,
                 last_used_at=time.time(),

@@ -6,7 +6,7 @@ import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal
+from typing import Literal
 from uuid import uuid4
 
 
@@ -27,6 +27,7 @@ class Voice:
     type: VoiceType
     sample_path: Path
     created_at: int
+    prompt_text: str | None = None
 
 
 class VoiceStore:
@@ -50,6 +51,7 @@ class VoiceStore:
                         type="builtin",
                         sample_path=wav_path,
                         created_at=0,
+                        prompt_text=None,
                     )
                 )
 
@@ -71,6 +73,11 @@ class VoiceStore:
                         type="custom",
                         sample_path=sample_path,
                         created_at=int(meta.get("created_at") or 0),
+                        prompt_text=(
+                            (str(meta.get("prompt_text")).strip() or None)
+                            if meta.get("prompt_text")
+                            else None
+                        ),
                     )
                 )
 
@@ -82,7 +89,7 @@ class VoiceStore:
                 return v
         return None
 
-    def create_voice(self, name: str, sample_wav_path: Path) -> Voice:
+    def create_voice(self, name: str, sample_wav_path: Path, prompt_text: str | None = None) -> Voice:
         self.ensure_dirs()
 
         now = int(time.time())
@@ -97,6 +104,7 @@ class VoiceStore:
             "id": voice_id,
             "name": name,
             "created_at": now,
+            "prompt_text": (prompt_text or "").strip() or None,
         }
         (voice_dir / "voice.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -106,6 +114,7 @@ class VoiceStore:
             type="custom",
             sample_path=stored_sample,
             created_at=now,
+            prompt_text=meta["prompt_text"],
         )
 
     def delete_voice(self, voice_id: str) -> bool:
@@ -114,4 +123,3 @@ class VoiceStore:
             return False
         shutil.rmtree(voice_dir)
         return True
-

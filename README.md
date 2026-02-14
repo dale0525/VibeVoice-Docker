@@ -1,6 +1,6 @@
 # VibeVoice-Docker
 
-将 VibeVoice 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
+将 VibeVoice / MOSS-TTSD 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
 
 ## 功能
 
@@ -14,13 +14,14 @@
 
 默认镜像地址：`ghcr.io/dale0525/vibevoice-docker`（如你 fork 了，请替换为自己的 `<owner>`）。
 
-两个 tag（一个镜像固定一个模型）：
+三个 tag（一个镜像固定一个模型）：
 - `:1.5b`：1.5B（更省显存/更快）
 - `:7b`：7B（更慢/更吃显存）
+- `:moss-ttsd-v1.0`：MOSS-TTSD v1.0（长对话场景更强）
 
 为避免“应用代码没怎么变，但更新镜像要重新拉 10GB+ 模型层”，本仓库把镜像拆成两层：
-- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b}`（尽量不频繁更新）
-- **app 镜像（服务代码）**：`ghcr.io/<owner>/vibevoice-docker:{1.5b|7b}`（频繁更新）
+- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0}`（尽量不频繁更新）
+- **app 镜像（服务代码）**：`ghcr.io/<owner>/vibevoice-docker:{1.5b|7b|moss-ttsd-v1.0}`（频繁更新）
 
 本地部署只需要拉 app 镜像；base 层会作为共享 layer 自动复用（不需要手动拉 base）。
 
@@ -44,6 +45,12 @@ docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.7b.yml up -d
 ```
 
+切换到 MOSS-TTSD v1.0：
+
+```bash
+docker compose -f docker-compose.prod.moss.yml up -d
+```
+
 访问：
 - Web UI：`http://localhost:8000/`
 - 健康检查：`http://localhost:8000/healthz`
@@ -62,6 +69,7 @@ docker compose -f docker-compose.prod.7b.yml up -d
 3. Branch 选 `main`，Dockerfile Path 选择模型：
    - 1.5B：`Dockerfile`
    - 7B：`Dockerfile.7b`
+   - MOSS-TTSD v1.0：`Dockerfile.moss`
 4. Endpoint Type 选 **Load Balancer**
 5. 建议环境变量：
    - `VIBEVOICE_API_KEY=<your-key>`（推荐：防止公开 endpoint 被盗用；设置后要求请求头 `Authorization: Bearer <key>`，Web UI 支持填写）
@@ -79,7 +87,7 @@ docker compose -f docker-compose.prod.7b.yml up -d
 打开 `http://<host>:8000/`：
 - 选择音色（内置示例音色 / 你上传的自定义音色）
 - 输入文本并生成音频（支持 wav/mp3 下载）
-- 可在页面里上传参考音频创建自定义克隆音色
+- 可在页面里上传参考音频创建自定义克隆音色（MOSS-TTSD 推荐同时填写“参考音频文本”）
 
 ## 使用（API，可选）
 
@@ -98,7 +106,7 @@ curl http://localhost:8000/v1/voices
 创建自定义克隆音色：
 
 ```bash
-curl -F "name=my-voice" -F "file=@sample.wav" http://localhost:8000/v1/voices
+curl -F "name=my-voice" -F "file=@sample.wav" -F "prompt_text=这是参考音频对应文本" http://localhost:8000/v1/voices
 ```
 
 生成语音（返回音频二进制）：
@@ -114,7 +122,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `voice`：来自 `GET /v1/voices` 的 `id`
 - `input`：普通文本或单一说话人的 `Speaker N:` 脚本
 - `response_format`：`wav`（默认）或 `mp3`
-- `vibevoice_cfg_scale`：高级参数，默认 3.0
+- `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（MOSS-TTSD 会忽略该参数）
 
 ## 文本输入规则（重要）
 
@@ -123,6 +131,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - 不支持多说话人：脚本里出现多个 `Speaker` 编号会返回 400
 - 默认对包含中文的文本做标点归一化，可用 `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
 - 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `VIBEVOICE_SCRIPT_LINE_MAX_CHARS` 配置
+- MOSS-TTSD 模式下会自动把单说话人脚本映射为 `[S1] ...`，并用音色的 `prompt_text`（若提供）增强克隆稳定性
 
 ## 其他配置（可选）
 
@@ -152,11 +161,17 @@ pixi run dev
 pixi run dev-7b
 ```
 
+MOSS-TTSD：
+
+```bash
+pixi run dev-moss
+```
+
 ## 镜像 Tag 规则（简要）
 
 自动构建配置见 `.github/workflows/vibevoice-docker.yml`：
 - Push 到 `main`：
-  - 更新 `:1.5b` / `:7b`（不带版本号，始终指向最新）
-  - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b`（带版本号，便于固定部署版本）
+  - 更新 `:1.5b` / `:7b` / `:moss-ttsd-v1.0`（不带版本号，始终指向最新）
+  - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b` / `:v0.0.<run_number>-moss-ttsd-v1.0`（带版本号，便于固定部署版本）
   - 自动创建 GitHub Release：`v0.0.<run_number>`
-- base 镜像（`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建
+- base 镜像（`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建
