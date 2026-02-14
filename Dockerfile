@@ -29,11 +29,11 @@ RUN set -eux; \
 WORKDIR /opt
 
 # 先安装最小依赖，确保后续下载模型步骤可缓存
-ARG VIBEVOICE_MODEL_ID=vibevoice-1.5b
+ARG MODEL_ID=vibevoice-1.5b
 COPY requirements.txt /tmp/requirements.txt
 RUN set -eux; \
     pip install --no-cache-dir -r /tmp/requirements.txt; \
-    if [ "${VIBEVOICE_MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
+    if [ "${MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
         pip install --no-cache-dir \
             "transformers==5.0.0" \
             "safetensors==0.6.2" \
@@ -41,7 +41,7 @@ RUN set -eux; \
             "torchaudio==2.3.1" \
             "tiktoken==0.12.0" \
             "einops==0.8.1"; \
-    elif [ "${VIBEVOICE_MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
+    elif [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
         pip install --no-cache-dir \
             "conformer==0.3.2" \
             "diffusers==0.29.0" \
@@ -52,23 +52,24 @@ RUN set -eux; \
             "omegaconf==2.3.0" \
             "onnx==1.16.0" \
             "onnxruntime-gpu==1.18.0" \
-            "openai-whisper==20231117" \
             "tiktoken==0.12.0" \
             "torchaudio==2.3.1" \
             "transformers==4.51.3" \
             "wetext==0.0.4" \
             "x-transformers==2.11.24"; \
+        pip install --no-cache-dir --no-build-isolation \
+            "openai-whisper==20231117"; \
     fi
 
 # 在镜像构建阶段下载模型（尽量靠前，避免调试改代码时反复下载）
-ENV VIBEVOICE_MODEL_ID=${VIBEVOICE_MODEL_ID}
-ENV VIBEVOICE_MODELS_DIR=/models
+ENV MODEL_ID=${MODEL_ID}
+ENV MODELS_DIR=/models
 ENV MODELSCOPE_CACHE=/models/modelscope-cache
 COPY scripts/download_models.py /opt/scripts/download_models.py
 RUN python /opt/scripts/download_models.py
 
 RUN set -eux; \
-    if [ "${VIBEVOICE_MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
+    if [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
         apt-get update; \
         apt-get install -y --no-install-recommends git; \
         rm -rf /var/lib/apt/lists/*; \
@@ -88,9 +89,9 @@ RUN pip install --no-cache-dir --no-deps -e /opt/VibeVoice
 COPY app /app
 WORKDIR /app
 
-ENV VIBEVOICE_DATA_DIR=/data
-ENV VIBEVOICE_VOICES_DIR=/data/voices
-ENV VIBEVOICE_BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
+ENV DATA_DIR=/data
+ENV VOICES_DIR=/data/voices
+ENV BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
 
 EXPOSE 8000 80
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1

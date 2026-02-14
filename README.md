@@ -1,4 +1,4 @@
-# VibeVoice-Docker
+# TTS-Docker
 
 将 VibeVoice / MOSS-TTSD / CosyVoice3 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
 
@@ -14,17 +14,17 @@
 
 ## 模型与镜像
 
-默认镜像地址：`ghcr.io/dale0525/vibevoice-docker`（如你 fork 了，请替换为自己的 `<owner>`）。
+默认镜像地址：`ghcr.io/dale0525/tts-docker`（如你 fork 了，请替换为自己的 `<owner>`）。
 
-三个 tag（一个镜像固定一个模型）：
+四个 tag（一个镜像固定一个模型）：
 - `:1.5b`：1.5B（更省显存/更快）
 - `:7b`：7B（更慢/更吃显存）
 - `:moss-ttsd-v1.0`：MOSS-TTSD v1.0（长对话场景更强）
 - `:cosyvoice3-0.5b`：Fun-CosyVoice3 0.5B（跨语种/语音风格控制更强）
 
 为避免“应用代码没怎么变，但更新镜像要重新拉 10GB+ 模型层”，本仓库把镜像拆成两层：
-- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（尽量不频繁更新）
-- **app 镜像（服务代码）**：`ghcr.io/<owner>/vibevoice-docker:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（频繁更新）
+- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（尽量不频繁更新）
+- **app 镜像（服务代码）**：`ghcr.io/<owner>/tts-docker:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（频繁更新）
 
 本地部署只需要拉 app 镜像；base 层会作为共享 layer 自动复用（不需要手动拉 base）。
 
@@ -32,33 +32,37 @@
 
 ### 1) 本地部署（推荐：直接拉 GHCR 镜像）
 
+仓库只保留一个 compose 文件：`docker-compose.yml`。
+
+模型配置使用项目根目录 `.env`（默认已提供 `MODEL=1.5b`）。
+
 启动（默认 1.5B）：
 
 ```bash
-docker compose -f docker-compose.prod.yml up -d
+docker compose up -d
 ```
+
+切换模型：修改项目根目录 `.env` 里的 `MODEL`，再重启：
+
+```bash
+MODEL=7b
+# MODEL=moss-ttsd-v1.0
+# MODEL=cosyvoice3-0.5b
+```
+
+修改后重启：
+
+```bash
+docker compose up -d
+```
+
+可选变量：
+- `MODEL`：模型 tag，默认 `1.5b`
+- `TTS_IMAGE_REPO`：镜像仓库，默认 `ghcr.io/dale0525/tts-docker`
 
 数据持久化：
 - 宿主机 `./data` → 容器 `/data`
 - 自定义音色会写入 `./data/voices`
-
-切换到 7B：
-
-```bash
-docker compose -f docker-compose.prod.7b.yml up -d
-```
-
-切换到 MOSS-TTSD v1.0：
-
-```bash
-docker compose -f docker-compose.prod.moss.yml up -d
-```
-
-切换到 CosyVoice3 0.5B：
-
-```bash
-docker compose -f docker-compose.prod.cosyvoice3.yml up -d
-```
 
 访问：
 - Web UI：`http://localhost:8000/`
@@ -82,10 +86,10 @@ docker compose -f docker-compose.prod.cosyvoice3.yml up -d
    - CosyVoice3 0.5B：`Dockerfile.cosy`
 4. Endpoint Type 选 **Load Balancer**
 5. 建议环境变量：
-   - `VIBEVOICE_API_KEY=<your-key>`（推荐：防止公开 endpoint 被盗用；设置后要求请求头 `Authorization: Bearer <key>`，Web UI 支持填写）
-   - `VIBEVOICE_WARMUP_ON_PRELOAD=false`
-   - `VIBEVOICE_EXIT_ON_IDLE_SECONDS=30`（更快退出以便 scale-to-zero）
-   - （可选）`VIBEVOICE_PRELOAD_MODEL=1`（更快首包，代价是启动更慢）
+   - `API_KEY=<your-key>`（推荐：防止公开 endpoint 被盗用；设置后要求请求头 `Authorization: Bearer <key>`，Web UI 支持填写）
+   - `WARMUP_ON_PRELOAD=false`
+   - `EXIT_ON_IDLE_SECONDS=30`（更快退出以便 scale-to-zero）
+   - （可选）`PRELOAD_MODEL=1`（更快首包，代价是启动更慢）
 6. Deploy
 
 更新方式：
@@ -166,25 +170,25 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - 普通文本会自动包装成 `Speaker 0: ...`
 - 支持单一说话人脚本：`Speaker 0:` / `Speaker0:`（大小写不敏感）
 - 不支持多说话人：脚本里出现多个 `Speaker` 编号会返回 400
-- 默认对包含中文的文本做标点归一化，可用 `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
-- 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `VIBEVOICE_SCRIPT_LINE_MAX_CHARS` 配置
+- 默认对包含中文的文本做标点归一化，可用 `ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
+- 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `SCRIPT_LINE_MAX_CHARS` 配置
 - MOSS-TTSD 模式下会自动把单说话人脚本映射为 `[S1] ...`，并用音色的 `prompt_text`（若提供）增强克隆稳定性
 - CosyVoice3 模式下会自动把单说话人脚本还原为普通文本，并优先使用音色的 `prompt_text` 作为参考音频文本（未提供时自动回退为目标文本首句）
 
 ## 其他配置（可选）
 
 常用：
-- `VIBEVOICE_API_KEY`：可选；设置后要求请求头 `Authorization: Bearer <key>`
-- `VIBEVOICE_PRELOAD_MODEL=1`：启动时预加载模型（更快首包）
-- `VIBEVOICE_WARMUP_ON_PRELOAD=false`：关闭预热（启动更快）
-- `VIBEVOICE_EXIT_ON_IDLE_SECONDS=30`：空闲自动退出（Serverless 常用）
-- `VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE=false`：关闭中文标点归一化
-- `VIBEVOICE_SCRIPT_LINE_MAX_CHARS=150`：单一 Speaker 脚本的单行最大字符数（超过则优先按句号 `.` 自动拆分为多行）
+- `API_KEY`：可选；设置后要求请求头 `Authorization: Bearer <key>`
+- `PRELOAD_MODEL=1`：启动时预加载模型（更快首包）
+- `WARMUP_ON_PRELOAD=false`：关闭预热（启动更快）
+- `EXIT_ON_IDLE_SECONDS=30`：空闲自动退出（Serverless 常用）
+- `ENABLE_CN_PUNCT_NORMALIZE=false`：关闭中文标点归一化
+- `SCRIPT_LINE_MAX_CHARS=150`：单一 Speaker 脚本的单行最大字符数（超过则优先按句号 `.` 自动拆分为多行）
 
 目录（一般不需要改）：
-- `VIBEVOICE_DATA_DIR`：默认 `/data`
-- `VIBEVOICE_VOICES_DIR`：默认 `/data/voices`
-- `VIBEVOICE_MODELS_DIR`：默认 `/models`
+- `DATA_DIR`：默认 `/data`
+- `VOICES_DIR`：默认 `/data/voices`
+- `MODELS_DIR`：默认 `/models`
 
 ## 本地开发（简要）
 
@@ -211,11 +215,17 @@ CosyVoice3 0.5B：
 pixi run dev-cosy3
 ```
 
+运行 compose（使用 `.env` 当前配置）：
+
+```bash
+pixi run up
+```
+
 ## 镜像 Tag 规则（简要）
 
-自动构建配置见 `.github/workflows/vibevoice-docker.yml`：
+自动构建配置见 `.github/workflows/tts-docker.yml`：
 - Push 到 `main`：
   - 更新 `:1.5b` / `:7b` / `:moss-ttsd-v1.0` / `:cosyvoice3-0.5b`（不带版本号，始终指向最新）
   - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b` / `:v0.0.<run_number>-moss-ttsd-v1.0` / `:v0.0.<run_number>-cosyvoice3-0.5b`（带版本号，便于固定部署版本）
   - 自动创建 GitHub Release：`v0.0.<run_number>`
-- base 镜像（`ghcr.io/<owner>/vibevoice-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建
+- base 镜像（`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建

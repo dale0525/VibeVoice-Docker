@@ -57,10 +57,10 @@ class Settings:
     def load() -> "Settings":
         import os
 
-        data_dir = Path(os.environ.get("VIBEVOICE_DATA_DIR", "/data")).resolve()
-        voices_dir = Path(os.environ.get("VIBEVOICE_VOICES_DIR", str(data_dir / "voices"))).resolve()
+        data_dir = Path(os.environ.get("DATA_DIR", "/data")).resolve()
+        voices_dir = Path(os.environ.get("VOICES_DIR", str(data_dir / "voices"))).resolve()
 
-        builtin_override = os.environ.get("VIBEVOICE_BUILTIN_VOICES_DIR")
+        builtin_override = os.environ.get("BUILTIN_VOICES_DIR")
         if builtin_override:
             builtin_voices_dir = Path(builtin_override).resolve()
         else:
@@ -72,22 +72,22 @@ class Settings:
             ]
             builtin_voices_dir = next((p.resolve() for p in candidates if p.exists()), candidates[-1].resolve())
 
-        models_dir = Path(os.environ.get("VIBEVOICE_MODELS_DIR", "/models")).resolve()
+        models_dir = Path(os.environ.get("MODELS_DIR", "/models")).resolve()
         model_id = _normalize_model_id(
-            os.environ.get("VIBEVOICE_MODEL_ID") or os.environ.get("VIBEVOICE_PRELOAD_MODEL"),
+            os.environ.get("MODEL_ID") or os.environ.get("MODEL"),
             "vibevoice-1.5b",
         )
 
-        idle_unload_seconds = _env_int(os.environ.get("VIBEVOICE_IDLE_UNLOAD_SECONDS"), 15 * 60)
-        exit_on_idle_seconds = max(0, _env_int(os.environ.get("VIBEVOICE_EXIT_ON_IDLE_SECONDS"), 0))
-        max_loaded_models = max(1, _env_int(os.environ.get("VIBEVOICE_MAX_LOADED_MODELS"), 1))
-        preload_on_startup = bool((os.environ.get("VIBEVOICE_PRELOAD_MODEL") or "").strip())
-        warmup_on_preload = _env_bool(os.environ.get("VIBEVOICE_WARMUP_ON_PRELOAD"), True)
+        idle_unload_seconds = _env_int(os.environ.get("IDLE_UNLOAD_SECONDS"), 15 * 60)
+        exit_on_idle_seconds = max(0, _env_int(os.environ.get("EXIT_ON_IDLE_SECONDS"), 0))
+        max_loaded_models = max(1, _env_int(os.environ.get("MAX_LOADED_MODELS"), 1))
+        preload_on_startup = bool((os.environ.get("PRELOAD_MODEL") or "").strip())
+        warmup_on_preload = _env_bool(os.environ.get("WARMUP_ON_PRELOAD"), True)
         enable_cn_punct_normalize = _env_bool(
-            os.environ.get("VIBEVOICE_ENABLE_CN_PUNCT_NORMALIZE"),
+            os.environ.get("ENABLE_CN_PUNCT_NORMALIZE"),
             True,
         )
-        api_key = os.environ.get("VIBEVOICE_API_KEY") or None
+        api_key = os.environ.get("API_KEY") or None
 
         return Settings(
             data_dir=data_dir,

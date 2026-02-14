@@ -29,7 +29,7 @@ RUN set -eux; \
 WORKDIR /opt
 
 # 先安装最小依赖，确保后续下载模型步骤可缓存
-ARG VIBEVOICE_MODEL_ID=moss-ttsd-v1.0
+ARG MODEL_ID=moss-ttsd-v1.0
 COPY requirements.txt /tmp/requirements.txt
 RUN set -eux; \
     pip install --no-cache-dir -r /tmp/requirements.txt; \
@@ -42,8 +42,8 @@ RUN set -eux; \
         "einops==0.8.1"
 
 # 在镜像构建阶段下载模型（尽量靠前，避免调试改代码时反复下载）
-ENV VIBEVOICE_MODEL_ID=${VIBEVOICE_MODEL_ID}
-ENV VIBEVOICE_MODELS_DIR=/models
+ENV MODEL_ID=${MODEL_ID}
+ENV MODELS_DIR=/models
 ENV MODELSCOPE_CACHE=/models/modelscope-cache
 COPY scripts/download_models.py /opt/scripts/download_models.py
 RUN python /opt/scripts/download_models.py
@@ -59,9 +59,9 @@ RUN pip install --no-cache-dir --no-deps -e /opt/VibeVoice
 COPY app /app
 WORKDIR /app
 
-ENV VIBEVOICE_DATA_DIR=/data
-ENV VIBEVOICE_VOICES_DIR=/data/voices
-ENV VIBEVOICE_BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
+ENV DATA_DIR=/data
+ENV VOICES_DIR=/data/voices
+ENV BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
 
 EXPOSE 8000 80
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1

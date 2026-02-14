@@ -25,6 +25,9 @@ const voiceSamplePlayer = document.getElementById("voiceSamplePlayer");
 
 const audioPlayer = document.getElementById("audioPlayer");
 const downloadLink = document.getElementById("downloadLink");
+const refreshBtn = document.getElementById("refresh");
+const saveApiKeyBtn = document.getElementById("saveApiKey");
+const clearApiKeyBtn = document.getElementById("clearApiKey");
 const originalGenerateBtnText = generateBtn.textContent || "生成";
 
 let currentAudioUrl = null;
@@ -44,6 +47,11 @@ function getAuthHeaders() {
   const key = (localStorage.getItem("vibevoice_api_key") || "").trim();
   if (!key) return {};
   return { Authorization: `Bearer ${key}` };
+}
+
+function bindClick(el, handler) {
+  if (!el) return;
+  el.addEventListener("click", handler);
 }
 
 function isReferenceMode() {
@@ -204,9 +212,13 @@ async function refreshLists(preferredVoiceId = "", preferredManageVoiceId = "") 
   }
 }
 
-document.getElementById("refresh").addEventListener("click", () => refreshLists());
+if (!refreshBtn || !saveApiKeyBtn || !clearApiKeyBtn) {
+  console.warn("[TTS-Docker] Missing toolbar controls in DOM; some button actions are not bound.");
+}
 
-document.getElementById("saveApiKey").addEventListener("click", () => {
+bindClick(refreshBtn, () => refreshLists());
+
+bindClick(saveApiKeyBtn, () => {
   const key = apiKeyEl.value.trim();
   if (key) {
     localStorage.setItem("vibevoice_api_key", key);
@@ -216,7 +228,7 @@ document.getElementById("saveApiKey").addEventListener("click", () => {
   }
 });
 
-document.getElementById("clearApiKey").addEventListener("click", () => {
+bindClick(clearApiKeyBtn, () => {
   localStorage.removeItem("vibevoice_api_key");
   apiKeyEl.value = "";
   setStatus("API Key 已清除");

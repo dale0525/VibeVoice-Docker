@@ -7,7 +7,7 @@ import re
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _SPEAKER_LINE_RE = re.compile(r"^\s*Speaker\s*(\d+)\s*:\s*(.*)$", re.IGNORECASE)
 
-_ENV_SCRIPT_LINE_MAX_CHARS = "VIBEVOICE_SCRIPT_LINE_MAX_CHARS"
+_ENV_SCRIPT_LINE_MAX_CHARS = "SCRIPT_LINE_MAX_CHARS"
 _DEFAULT_SCRIPT_LINE_MAX_CHARS = 150
 _SPLIT_BREAK_CHAR = "."
 
@@ -104,7 +104,7 @@ def _get_script_line_max_chars() -> int:
     获取单一 Speaker 脚本单行文本长度上限（按 Python 字符数 len 计）。
 
     - 默认：150
-    - 通过环境变量覆盖：VIBEVOICE_SCRIPT_LINE_MAX_CHARS
+    - 通过环境变量覆盖：SCRIPT_LINE_MAX_CHARS
     - 设置为 0 或负数：禁用自动拆分
     """
     raw = (os.environ.get(_ENV_SCRIPT_LINE_MAX_CHARS) or "").strip()

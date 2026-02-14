@@ -40,7 +40,7 @@ model_manager = ModelManager(
     max_loaded_models=settings.max_loaded_models,
 )
 
-app = FastAPI(title="VibeVoice OpenAI-Compatible API", version="0.1.0")
+app = FastAPI(title="TTS-Docker OpenAI-Compatible API", version="0.1.0")
 
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
@@ -139,7 +139,7 @@ def web_index() -> str:
     index_path = static_dir / "index.html"
     if index_path.exists():
         return index_path.read_text(encoding="utf-8")
-    return "<h1>VibeVoice-Docker</h1><p>static/index.html not found</p>"
+    return "<h1>TTS-Docker</h1><p>static/index.html not found</p>"
 
 
 @app.get("/healthz")
@@ -664,7 +664,7 @@ async def _startup() -> None:
             if idle_seconds < settings.exit_on_idle_seconds:
                 continue
 
-            logger.info("Idle for %.0fs, exiting (VIBEVOICE_EXIT_ON_IDLE_SECONDS=%s)", idle_seconds, settings.exit_on_idle_seconds)
+            logger.info("Idle for %.0fs, exiting (EXIT_ON_IDLE_SECONDS=%s)", idle_seconds, settings.exit_on_idle_seconds)
             _request_process_exit()
             return
 

@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ghcr.io/dale0525/vibevoice-docker-base:1.5b
+ARG BASE_IMAGE=ghcr.io/dale0525/tts-docker-base:1.5b
 FROM ${BASE_IMAGE}
 
 WORKDIR /opt
@@ -14,10 +14,9 @@ RUN pip install --no-cache-dir --no-deps -e /opt/VibeVoice
 COPY app /app
 WORKDIR /app
 
-ENV VIBEVOICE_DATA_DIR=/data
-ENV VIBEVOICE_VOICES_DIR=/data/voices
-ENV VIBEVOICE_BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
+ENV DATA_DIR=/data
+ENV VOICES_DIR=/data/voices
+ENV BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
 
 EXPOSE 8000 80
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
-

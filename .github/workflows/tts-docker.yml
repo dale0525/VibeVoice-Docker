@@ -1,4 +1,4 @@
-name: build-and-push-vibevoice-docker
+name: build-and-push-tts-docker
 
 on:
   push:
@@ -91,8 +91,8 @@ jobs:
           # 每次 workflow run 自动生成递增版本号（避免依赖手动打 tag）
           # 版本号规则：v0.0.<GITHUB_RUN_NUMBER>
           VERSION="v0.0.${GITHUB_RUN_NUMBER}"
-          IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker"
-          BASE_IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker-base"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/tts-docker"
+          BASE_IMAGE="ghcr.io/${{ github.repository_owner }}/tts-docker-base"
           MODEL_TAG="${{ matrix.model_tag }}"
           {
             echo "image=${IMAGE}"
@@ -152,7 +152,7 @@ jobs:
           build-args: |
             USE_CN_MIRRORS=0
             PIP_INDEX_URL=https://pypi.org/simple/
-            VIBEVOICE_MODEL_ID=${{ matrix.model_id }}
+            MODEL_ID=${{ matrix.model_id }}
           push: true
           tags: ${{ steps.vars.outputs.base_ref }}
           # 使用 GHCR 作为 build cache 存储，避免 GHA cache 体积/并发导致的缺 blob 问题
@@ -188,7 +188,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="v0.0.${GITHUB_RUN_NUMBER}"
-          IMAGE="ghcr.io/${{ github.repository_owner }}/vibevoice-docker"
+          IMAGE="ghcr.io/${{ github.repository_owner }}/tts-docker"
 
           NOTES_FILE="$(mktemp)"
           cat > "${NOTES_FILE}" <<EOF

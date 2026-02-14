@@ -2,12 +2,12 @@
 在镜像构建阶段下载模型文件。
 
 环境变量：
-- VIBEVOICE_MODELS_DIR: 模型落盘目录，默认 /models
-- VIBEVOICE_MODEL_ID: 模型选择（vibevoice-1.5b / vibevoice-7b / moss-ttsd-v1.0 / cosyvoice3-0.5b）
-- VIBEVOICE_MODELSCOPE_REVISION: ModelScope revision（可选）
+- MODELS_DIR: 模型落盘目录，默认 /models
+- MODEL_ID: 模型选择（vibevoice-1.5b / vibevoice-7b / moss-ttsd-v1.0 / cosyvoice3-0.5b）
+- MODELSCOPE_REVISION: ModelScope revision（可选）
 - MODELSCOPE_CACHE: ModelScope 下载缓存目录（建议指向临时目录）
-- VIBEVOICE_EXPECTED_INDEX_SHA256: 仅对 VibeVoice 生效，可覆盖默认 sha256 校验值
-- VIBEVOICE_CLEAN_MODELSCOPE_CACHE: 是否清理 MODELSCOPE_CACHE（默认 1）
+- EXPECTED_INDEX_SHA256: 仅对 VibeVoice 生效，可覆盖默认 sha256 校验值
+- CLEAN_MODELSCOPE_CACHE: 是否清理 MODELSCOPE_CACHE（默认 1）
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def _normalize_model_id(value: Optional[str]) -> str:
         return "moss-ttsd-v1.0"
     if v in {"cosyvoice3-0.5b", "cosyvoice3", "cosy3", "fun-cosyvoice3-0.5b"}:
         return "cosyvoice3-0.5b"
-    raise ValueError(f"Unsupported VIBEVOICE_MODEL_ID: {value!r}")
+    raise ValueError(f"Unsupported MODEL_ID: {value!r}")
 
 
 def _default_vibevoice_index_sha256(model_id: str) -> Optional[str]:
@@ -113,9 +113,9 @@ def _verify_index_sha256(local_dir: Path, expected_sha256: str) -> None:
 
 
 def main() -> None:
-    models_dir = Path(os.getenv("VIBEVOICE_MODELS_DIR", "/models"))
-    model_id = _normalize_model_id(os.getenv("VIBEVOICE_MODEL_ID"))
-    revision = (os.getenv("VIBEVOICE_MODELSCOPE_REVISION") or "").strip() or None
+    models_dir = Path(os.getenv("MODELS_DIR", "/models"))
+    model_id = _normalize_model_id(os.getenv("MODEL_ID"))
+    revision = (os.getenv("MODELSCOPE_REVISION") or "").strip() or None
     cache_dir = (os.getenv("MODELSCOPE_CACHE") or "").strip() or None
 
     targets = _build_targets(model_id)
@@ -133,13 +133,13 @@ def main() -> None:
         expected_sha = target.expected_index_sha256
         # 兼容旧环境变量：仅在下载单个 VibeVoice 模型时允许全局覆盖。
         if len(targets) == 1 and idx == 0:
-            env_sha = (os.getenv("VIBEVOICE_EXPECTED_INDEX_SHA256") or "").strip()
+            env_sha = (os.getenv("EXPECTED_INDEX_SHA256") or "").strip()
             if env_sha:
                 expected_sha = env_sha
         if expected_sha:
             _verify_index_sha256(local_dir, expected_sha)
 
-    clean_cache = (os.getenv("VIBEVOICE_CLEAN_MODELSCOPE_CACHE") or "1").strip().lower() not in {"0", "false", "no"}
+    clean_cache = (os.getenv("CLEAN_MODELSCOPE_CACHE") or "1").strip().lower() not in {"0", "false", "no"}
     if clean_cache and cache_dir:
         cache_path = Path(cache_dir)
         if cache_path.exists():
