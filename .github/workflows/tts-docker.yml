@@ -27,21 +27,125 @@ permissions:
   packages: write
 
 jobs:
+  determine-models:
+    name: determine-models-to-build
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+      has_models: ${{ steps.pick.outputs.has_models }}
+      model_tags_json: ${{ steps.pick.outputs.model_tags_json }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select models from changed files
+        id: pick
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NEED_15="0"
+          NEED_7B="0"
+          NEED_MOSS="0"
+          NEED_COSY="0"
+
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            NEED_15="1"
+            NEED_7B="1"
+            NEED_MOSS="1"
+            NEED_COSY="1"
+          else
+            BEFORE="${{ github.event.before }}"
+            AFTER="${{ github.sha }}"
+
+            if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+              CHANGED="$(git diff --name-only "${BEFORE}" "${AFTER}")"
+            else
+              CHANGED="$(git show --name-only --pretty='' "${AFTER}")"
+            fi
+
+            echo "Changed files:"
+            echo "${CHANGED}"
+
+            NEED_ALL="0"
+
+            while IFS= read -r file; do
+              [[ -z "${file}" ]] && continue
+              case "${file}" in
+                Dockerfile.app|Dockerfile.base|requirements.txt)
+                  NEED_ALL="1"
+                  ;;
+                app/*|scripts/*|VibeVoice/*)
+                  NEED_ALL="1"
+                  ;;
+                Dockerfile)
+                  NEED_15="1"
+                  ;;
+                Dockerfile.7b)
+                  NEED_7B="1"
+                  ;;
+                Dockerfile.moss)
+                  NEED_MOSS="1"
+                  ;;
+                Dockerfile.cosy)
+                  NEED_COSY="1"
+                  ;;
+              esac
+            done <<< "${CHANGED}"
+
+            # 保守兜底：如果 changed files 为空，默认全量构建，避免误跳过。
+            if [[ -z "${CHANGED}" ]]; then
+              NEED_ALL="1"
+            fi
+
+            if [[ "${NEED_ALL}" == "1" ]]; then
+              NEED_15="1"
+              NEED_7B="1"
+              NEED_MOSS="1"
+              NEED_COSY="1"
+            fi
+          fi
+
+          SELECTED='[]'
+          if [[ "${NEED_15}" == "1" ]]; then
+            SELECTED="$(jq -c '. + [{"model_tag":"1.5b","model_id":"vibevoice-1.5b"}]' <<< "${SELECTED}")"
+          fi
+          if [[ "${NEED_7B}" == "1" ]]; then
+            SELECTED="$(jq -c '. + [{"model_tag":"7b","model_id":"vibevoice-7b"}]' <<< "${SELECTED}")"
+          fi
+          if [[ "${NEED_MOSS}" == "1" ]]; then
+            SELECTED="$(jq -c '. + [{"model_tag":"moss-ttsd-v1.0","model_id":"moss-ttsd-v1.0"}]' <<< "${SELECTED}")"
+          fi
+          if [[ "${NEED_COSY}" == "1" ]]; then
+            SELECTED="$(jq -c '. + [{"model_tag":"cosyvoice3-0.5b","model_id":"cosyvoice3-0.5b"}]' <<< "${SELECTED}")"
+          fi
+
+          MATRIX="$(jq -cn --argjson include "${SELECTED}" '{include:$include}')"
+          MODEL_TAGS_JSON="$(jq -cn --argjson items "${SELECTED}" '$items | map(.model_tag)')"
+
+          if [[ "$(jq 'length' <<< "${SELECTED}")" -gt 0 ]]; then
+            HAS_MODELS="true"
+          else
+            HAS_MODELS="false"
+          fi
+
+          echo "Selected models: ${SELECTED}"
+          {
+            echo "matrix=${MATRIX}"
+            echo "has_models=${HAS_MODELS}"
+            echo "model_tags_json=${MODEL_TAGS_JSON}"
+          } >> "${GITHUB_OUTPUT}"
+
   build:
     name: build-and-push (${{ matrix.model_tag }})
+    needs: determine-models
+    if: needs.determine-models.outputs.has_models == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - model_tag: "1.5b"
-            model_id: "vibevoice-1.5b"
-          - model_tag: "7b"
-            model_id: "vibevoice-7b"
-          - model_tag: "moss-ttsd-v1.0"
-            model_id: "moss-ttsd-v1.0"
-          - model_tag: "cosyvoice3-0.5b"
-            model_id: "cosyvoice3-0.5b"
+      matrix: ${{ fromJSON(needs.determine-models.outputs.matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -174,7 +278,8 @@ jobs:
 
   release:
     name: create-github-release
-    needs: build
+    needs: [determine-models, build]
+    if: needs.determine-models.outputs.has_models == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -184,6 +289,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           # 说明：release job 没有 checkout 仓库，因此 gh 不能通过 git remote 自动推断 repo，需要显式指定
           GH_REPO: ${{ github.repository }}
+          MODEL_TAGS_JSON: ${{ needs.determine-models.outputs.model_tags_json }}
         shell: bash
         run: |
           set -euo pipefail
@@ -191,15 +297,12 @@ jobs:
           IMAGE="ghcr.io/${{ github.repository_owner }}/tts-docker"
 
           NOTES_FILE="$(mktemp)"
-          cat > "${NOTES_FILE}" <<EOF
-          自动构建 Release（GitHub Actions）。
-
-          Docker 镜像：
-          - ${IMAGE}:${TAG}-1.5b
-          - ${IMAGE}:${TAG}-7b
-          - ${IMAGE}:${TAG}-moss-ttsd-v1.0
-          - ${IMAGE}:${TAG}-cosyvoice3-0.5b
-          EOF
+          {
+            echo "自动构建 Release（GitHub Actions）。"
+            echo
+            echo "Docker 镜像："
+            jq -r --arg image "${IMAGE}" --arg tag "${TAG}" '.[] | "- \($image):\($tag)-\(.)"' <<< "${MODEL_TAGS_JSON}"
+          } > "${NOTES_FILE}"
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "Release already exists: ${TAG}"

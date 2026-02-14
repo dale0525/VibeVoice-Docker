@@ -225,7 +225,20 @@ pixi run up
 
 自动构建配置见 `.github/workflows/tts-docker.yml`：
 - Push 到 `main`：
-  - 更新 `:1.5b` / `:7b` / `:moss-ttsd-v1.0` / `:cosyvoice3-0.5b`（不带版本号，始终指向最新）
-  - 额外生成 `:v0.0.<run_number>-1.5b` / `:v0.0.<run_number>-7b` / `:v0.0.<run_number>-moss-ttsd-v1.0` / `:v0.0.<run_number>-cosyvoice3-0.5b`（带版本号，便于固定部署版本）
-  - 自动创建 GitHub Release：`v0.0.<run_number>`
-- base 镜像（`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新；也可在 `workflow_dispatch` 勾选 `rebuild_base` 强制重建
+  - 只更新本次提交受影响的模型镜像（不会再无条件全量更新 4 个模型）
+  - 对于被选中的模型，会更新 `:<model_tag>`（始终指向最新）并额外生成 `:v0.0.<run_number>-<model_tag>`（便于固定部署版本）
+  - 自动创建 GitHub Release：`v0.0.<run_number>`（Release 说明仅列出本次实际构建的模型镜像）
+- workflow_dispatch（手动触发）：
+  - 默认全量构建 4 个模型
+  - 可勾选 `rebuild_base=true` 强制重建 base 镜像
+- base 镜像（`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新
+
+文件变更与模型更新对应关系（push 到 `main`）：
+
+| 变更文件 | 更新模型 |
+| --- | --- |
+| `Dockerfile` | `1.5b` |
+| `Dockerfile.7b` | `7b` |
+| `Dockerfile.moss` | `moss-ttsd-v1.0` |
+| `Dockerfile.cosy` | `cosyvoice3-0.5b` |
+| `Dockerfile.app` / `Dockerfile.base` / `requirements.txt` / `app/**` / `scripts/**` / `VibeVoice/**` | 全部模型（`1.5b`、`7b`、`moss-ttsd-v1.0`、`cosyvoice3-0.5b`） |

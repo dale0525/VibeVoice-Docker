@@ -4,6 +4,54 @@ import inspect
 from typing import Any
 
 
+def ensure_is_autocast_enabled_device_type_support(torch_mod: Any | None = None) -> bool:
+    """Add ``device_type`` compatibility to ``torch.is_autocast_enabled``.
+
+    Returns True when a compatibility wrapper is installed, False when the
+    runtime already supports ``device_type`` natively.
+    """
+
+    if torch_mod is None:
+        import torch as torch_mod  # type: ignore[no-redef]
+
+    is_autocast_enabled = getattr(torch_mod, "is_autocast_enabled", None)
+    if not callable(is_autocast_enabled):
+        return False
+
+    if getattr(is_autocast_enabled, "_supports_device_type", False):
+        return False
+
+    try:
+        signature = inspect.signature(is_autocast_enabled)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        signature = None
+
+    if signature is not None and len(signature.parameters) >= 1:
+        return False
+
+    def is_autocast_enabled_with_device_type(device_type: str | None = None):
+        if device_type:
+            backend_flag = getattr(torch_mod, f"is_autocast_{device_type}_enabled", None)
+            if callable(backend_flag):
+                return bool(backend_flag())
+
+            backend_mod = getattr(torch_mod, device_type, None)
+            backend_mod_flag = getattr(backend_mod, "is_autocast_enabled", None)
+            if callable(backend_mod_flag):
+                return bool(backend_mod_flag())
+
+            try:
+                return is_autocast_enabled(device_type)
+            except TypeError:
+                pass
+
+        return is_autocast_enabled()
+
+    is_autocast_enabled_with_device_type._supports_device_type = True  # type: ignore[attr-defined]
+    torch_mod.is_autocast_enabled = is_autocast_enabled_with_device_type
+    return True
+
+
 def ensure_pad_sequence_padding_side_support(torch_mod: Any | None = None) -> bool:
     """Add ``padding_side`` compatibility to ``torch.nn.utils.rnn.pad_sequence``.
 
