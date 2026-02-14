@@ -5,7 +5,9 @@
 ## 功能
 
 - 生成语音：`POST /v1/audio/speech`（`wav` / `mp3`）
+- 参考音频试听：`POST /v1/audio/speech/reference`（上传参考音频后直接生成，不落库）
 - 音色管理：`GET/POST/DELETE /v1/voices`（创建自定义克隆音色）
+- 音色管理扩展：`GET /v1/voices/{id}/sample`（试听参考音频）、`PATCH /v1/voices/{id}`（编辑参考文本）
 - 模型信息：`GET /v1/models`
 - 健康检查：`GET /healthz`、`GET /ping`
 - Web UI：`GET /`
@@ -87,7 +89,9 @@ docker compose -f docker-compose.prod.moss.yml up -d
 打开 `http://<host>:8000/`：
 - 选择音色（内置示例音色 / 你上传的自定义音色）
 - 输入文本并生成音频（支持 wav/mp3 下载）
-- 可在页面里上传参考音频创建自定义克隆音色（MOSS-TTSD 推荐同时填写“参考音频文本”）
+- 若在音色中选择“参考音频”，可先上传参考音频+prompt 文本进行试听，满意后再保存为新音色
+- 在“音色管理”里可对已保存音色进行：试听参考音频、编辑参考文本（仅自定义音色）、删除（仅自定义音色）
+  - 参考文本支持失焦自动保存（也可点击“保存参考文本”手动保存）
 
 ## 使用（API，可选）
 
@@ -103,10 +107,35 @@ curl http://localhost:8000/v1/models
 curl http://localhost:8000/v1/voices
 ```
 
+试听某个音色的参考音频：
+
+```bash
+curl http://localhost:8000/v1/voices/<voice_id>/sample --output sample.wav
+```
+
+编辑某个自定义音色的参考文本：
+
+```bash
+curl -X PATCH http://localhost:8000/v1/voices/<voice_id> \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt_text\":\"新的参考文本\"}"
+```
+
 创建自定义克隆音色：
 
 ```bash
 curl -F "name=my-voice" -F "file=@sample.wav" -F "prompt_text=这是参考音频对应文本" http://localhost:8000/v1/voices
+```
+
+用参考音频直接试听（不创建音色）：
+
+```bash
+curl -X POST http://localhost:8000/v1/audio/speech/reference \
+  -F "file=@sample.wav" \
+  -F "input=你好，世界！" \
+  -F "prompt_text=这是参考音频对应文本（可选）" \
+  -F "response_format=mp3" \
+  --output out.mp3
 ```
 
 生成语音（返回音频二进制）：

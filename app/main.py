@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -126,6 +126,11 @@ class SpeechRequest(BaseModel):
     voice: str = Field(..., description="Voice id from /v1/voices")
     response_format: AudioFormat = Field("wav", description="wav | mp3")
     vibevoice_cfg_scale: float = Field(3.0, description="CFG scale (advanced)")
+
+
+class UpdateVoiceRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    prompt_text: str | None = Field(None, description="Reference transcript for voice cloning")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -269,6 +274,35 @@ def delete_voice(voice_id: str, _: None = Depends(require_api_key)) -> dict[str,
     return {"deleted": ok, "id": voice_id, "object": "voice"}
 
 
+@app.get("/v1/voices/{voice_id}/sample")
+def get_voice_sample(voice_id: str, _: None = Depends(require_api_key)) -> Response:
+    voice = voice_store.get_voice(voice_id)
+    if voice is None:
+        raise HTTPException(status_code=404, detail="voice not found")
+    return FileResponse(path=str(voice.sample_path), media_type="audio/wav", filename=f"{voice.id}.wav")
+
+
+@app.patch("/v1/voices/{voice_id}")
+def update_voice(voice_id: str, payload: UpdateVoiceRequest, _: None = Depends(require_api_key)) -> dict[str, Any]:
+    voice = voice_store.get_voice(voice_id)
+    if voice is None:
+        raise HTTPException(status_code=404, detail="voice not found")
+    if voice.type == "builtin":
+        raise HTTPException(status_code=400, detail="builtin voices cannot be edited")
+
+    updated = voice_store.update_voice_prompt_text(voice_id=voice_id, prompt_text=payload.prompt_text)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="voice not found")
+    return {
+        "id": updated.id,
+        "object": "voice",
+        "name": updated.name,
+        "type": updated.type,
+        "created": updated.created_at,
+        "prompt_text": updated.prompt_text,
+    }
+
+
 _generation_lock = asyncio.Lock()
 _active_user_requests = 0
 _last_user_request_at = time.time()
@@ -282,31 +316,40 @@ def _request_process_exit() -> None:
         os._exit(0)
 
 
-@app.post("/v1/audio/speech")
-async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_key)) -> Response:
-    model_id = settings.model_id
-    voice = voice_store.get_voice(payload.voice)
-    if voice is None:
-        return _openai_error(f"Unknown voice: {payload.voice}", code="voice_not_found", status_code=404)
+def _normalize_request_script(input_text: str) -> str:
+    script = (input_text or "").strip()
+    if not script:
+        raise HTTPException(status_code=400, detail="input is required")
 
-    script = payload.input.strip()
     if not looks_like_speaker_script(script):
         script = f"Speaker 0: {script}"
+
     try:
-        script = normalize_single_speaker_script(
+        return normalize_single_speaker_script(
             script,
             enable_cn_punct_normalize=settings.enable_cn_punct_normalize,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
+
+async def _synthesize_with_voice(
+    *,
+    input_text: str,
+    voice: Voice,
+    response_format: AudioFormat,
+    cfg_scale: float,
+) -> Response:
+    model_id = settings.model_id
+    script = _normalize_request_script(input_text)
+
     request_started_at = time.perf_counter()
     logger.info(
         "TTS start model=%s voice=%s format=%s chars=%d",
         model_id,
         voice.id,
-        payload.response_format,
-        len(payload.input or ""),
+        response_format,
+        len(input_text or ""),
     )
 
     lock_wait_started_at = time.perf_counter()
@@ -321,13 +364,13 @@ async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_ke
             model_id,
             script,
             voice,
-            float(payload.vibevoice_cfg_scale),
+            float(cfg_scale),
         )
         inference_ms = (time.perf_counter() - inference_started_at) * 1000
 
     encode_started_at = time.perf_counter()
     wav_bytes = audio_to_wav_bytes(audio, sample_rate=sample_rate)
-    if payload.response_format == "mp3":
+    if response_format == "mp3":
         mp3_bytes = wav_bytes_to_mp3_bytes(wav_bytes)
         total_ms = (time.perf_counter() - request_started_at) * 1000
         encode_ms = (time.perf_counter() - encode_started_at) * 1000
@@ -356,6 +399,62 @@ async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_ke
         encode_ms,
     )
     return StreamingResponse(io.BytesIO(wav_bytes), media_type="audio/wav")
+
+
+@app.post("/v1/audio/speech")
+async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_key)) -> Response:
+    voice = voice_store.get_voice(payload.voice)
+    if voice is None:
+        return _openai_error(f"Unknown voice: {payload.voice}", code="voice_not_found", status_code=404)
+
+    return await _synthesize_with_voice(
+        input_text=payload.input,
+        voice=voice,
+        response_format=payload.response_format,
+        cfg_scale=float(payload.vibevoice_cfg_scale),
+    )
+
+
+@app.post("/v1/audio/speech/reference")
+async def create_speech_with_reference(
+    input_text: str = Form(..., alias="input"),
+    file: UploadFile = File(...),
+    prompt_text: str | None = Form(None),
+    response_format: AudioFormat = Form("wav"),
+    vibevoice_cfg_scale: float = Form(3.0),
+    _: None = Depends(require_api_key),
+) -> Response:
+    upload_dir = settings.data_dir / "uploads"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    safe_filename = Path(file.filename or "voice").name
+    tmp_path = upload_dir / f"speech-ref-upload-{int(time.time())}-{safe_filename}"
+    wav_path = upload_dir / f"speech-ref-converted-{tmp_path.stem}.wav"
+
+    tmp_path.write_bytes(await file.read())
+    _ffmpeg_to_wav_24k_mono(tmp_path, wav_path)
+
+    reference_voice = Voice(
+        id="reference-audio",
+        name="reference-audio",
+        type="custom",
+        sample_path=wav_path,
+        created_at=int(time.time()),
+        prompt_text=(prompt_text or "").strip() or None,
+    )
+    try:
+        return await _synthesize_with_voice(
+            input_text=input_text,
+            voice=reference_voice,
+            response_format=response_format,
+            cfg_scale=float(vibevoice_cfg_scale),
+        )
+    finally:
+        try:
+            tmp_path.unlink(missing_ok=True)
+            wav_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 def _load_mono_wav(path: Path):

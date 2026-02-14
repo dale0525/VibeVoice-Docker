@@ -117,6 +117,34 @@ class VoiceStore:
             prompt_text=meta["prompt_text"],
         )
 
+    def update_voice_prompt_text(self, voice_id: str, prompt_text: str | None) -> Voice | None:
+        voice_dir = self._custom_dir / voice_id
+        meta_path = voice_dir / "voice.json"
+        sample_path = voice_dir / "sample.wav"
+        if not meta_path.exists() or not sample_path.exists():
+            return None
+
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:
+            meta = {}
+
+        normalized_prompt = (prompt_text or "").strip() or None
+        meta["id"] = str(meta.get("id") or voice_id)
+        meta["name"] = str(meta.get("name") or voice_id)
+        meta["created_at"] = int(meta.get("created_at") or 0)
+        meta["prompt_text"] = normalized_prompt
+        meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        return Voice(
+            id=meta["id"],
+            name=meta["name"],
+            type="custom",
+            sample_path=sample_path,
+            created_at=meta["created_at"],
+            prompt_text=meta["prompt_text"],
+        )
+
     def delete_voice(self, voice_id: str) -> bool:
         voice_dir = self._custom_dir / voice_id
         if not voice_dir.exists():

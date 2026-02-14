@@ -52,6 +52,16 @@
           文本（中文会自动按 README Tips 归一化为英文逗号/句号）
           <textarea id="textInput" rows="6" placeholder="输入要合成的文本..."></textarea>
         </label>
+        <div id="referenceInputs" class="grid" style="display: none">
+          <label>
+            参考音频（wav/mp3/flac/m4a/ogg）
+            <input id="referenceVoiceFile" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg" />
+          </label>
+          <label>
+            参考音频文本（可选，MOSS-TTSD 推荐填写）
+            <input id="referenceVoicePromptText" type="text" placeholder="例如：这是参考音频对应文本。" />
+          </label>
+        </div>
         <div class="row">
           <button id="generate" class="primary">生成</button>
           <a id="downloadLink" class="secondary" href="#" download style="display: none">下载</a>
@@ -60,29 +70,37 @@
       </section>
 
       <section class="card">
-        <h2>创建自定义克隆音色</h2>
+        <h2>音色管理</h2>
         <div class="grid">
           <label>
-            名称
-            <input id="voiceName" type="text" placeholder="例如：我的音色" />
-          </label>
-          <label>
-            参考音频（wav/mp3/flac/m4a/ogg）
-            <input id="voiceFile" type="file" accept=".wav,.mp3,.flac,.m4a,.ogg" />
-          </label>
-          <label>
-            参考音频文本（可选，MOSS-TTSD 推荐填写）
-            <input id="voicePromptText" type="text" placeholder="例如：这是我的参考音频文本。" />
+            新音色名称
+            <input id="voiceName" type="text" placeholder="先在“参考音频”模式试听满意后再保存" />
           </label>
         </div>
         <div class="row">
-          <button id="createVoice" class="primary">创建音色</button>
-          <button id="deleteVoice" class="danger">删除所选音色（仅自定义）</button>
+          <button id="saveReferenceVoice" class="primary">保存当前参考音频为音色</button>
         </div>
+        <hr style="border: none; border-top: 1px solid #2a2f3a; margin: 14px 0" />
+        <div class="grid">
+          <label>
+            已保存音色
+            <select id="manageVoiceSelect"></select>
+          </label>
+          <label>
+            参考文本（可编辑）
+            <textarea id="manageVoicePromptText" rows="3" placeholder="失焦自动保存，也可手动点击“保存参考文本”"></textarea>
+          </label>
+        </div>
+        <div class="row">
+          <button id="previewVoiceSample" class="secondary">试听参考音频</button>
+          <button id="saveVoicePromptText" class="secondary">保存参考文本</button>
+          <button id="deleteVoice" class="danger">删除此音色</button>
+        </div>
+        <audio id="voiceSamplePlayer" controls style="width: 100%; margin-top: 8px"></audio>
       </section>
 
       <footer class="footer muted">
-        API: <code>POST /v1/audio/speech</code> · 音色: <code>/v1/voices</code> · 模型: <code>/v1/models</code>
+        API: <code>POST /v1/audio/speech</code> / <code>/v1/audio/speech/reference</code> · 音色: <code>/v1/voices</code> · 模型: <code>/v1/models</code>
       </footer>
     </main>
 
