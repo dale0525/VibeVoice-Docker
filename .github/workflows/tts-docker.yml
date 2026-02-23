@@ -265,6 +265,7 @@ jobs:
           set -euo pipefail
           NEED_BASE="0"
           BASE_REF="${{ steps.vars.outputs.base_ref }}"
+          CURRENT_MODEL_TAG="${{ matrix.model_tag }}"
 
           # base 镜像不存在时必须先构建（例如首次运行）
           if ! docker buildx imagetools inspect "${BASE_REF}" >/dev/null 2>&1; then
@@ -280,7 +281,6 @@ jobs:
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             BEFORE="${{ github.event.before }}"
             AFTER="${{ github.sha }}"
-            CURRENT_MODEL_TAG="${{ matrix.model_tag }}"
 
             if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
               CHANGED="$(git diff --name-only "${BEFORE}" "${AFTER}")"
@@ -337,6 +337,14 @@ jobs:
             fi
           fi
 
+          # 兜底自愈：若复用了历史 cosy base，但关键依赖缺失（如 hydra），则强制重建当前模型 base。
+          if [[ "${NEED_BASE}" != "1" && "${CURRENT_MODEL_TAG:-}" == "cosyvoice3-0.5b" ]]; then
+            if ! docker run --rm --entrypoint python "${BASE_REF}" -c "import importlib, sys; sys.path.append('/opt/CosyVoice'); sys.path.append('/opt/CosyVoice/third_party/Matcha-TTS'); import hydra; importlib.import_module('cosyvoice.flow.flow_matching')" >/dev/null 2>&1; then
+              echo "Base image ${BASE_REF} failed CosyVoice3 dependency probe; forcing base rebuild."
+              NEED_BASE="1"
+            fi
+          fi
+
           echo "need_base=${NEED_BASE}" >> "${GITHUB_OUTPUT}"
 
       - name: Build and push base image
@@ -367,15 +375,6 @@ jobs:
           # 使用 GHCR 作为 build cache 存储，避免 GHA cache 体积/并发导致的缺 blob 问题
           cache-from: type=registry,ref=${{ steps.vars.outputs.app_cache_ref }}
           cache-to: type=registry,ref=${{ steps.vars.outputs.app_cache_ref }},mode=max
-
-      - name: CosyVoice3 import smoke test
-        if: matrix.model_tag == 'cosyvoice3-0.5b'
-        shell: bash
-        run: |
-          set -euo pipefail
-          IMAGE_REF="${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.version }}-${{ matrix.model_tag }}"
-          docker pull "${IMAGE_REF}"
-          docker run --rm --entrypoint python "${IMAGE_REF}" -c "import importlib, sys; sys.path.append('/opt/CosyVoice'); sys.path.append('/opt/CosyVoice/third_party/Matcha-TTS'); import hydra; importlib.import_module('cosyvoice.flow.flow_matching'); print('CosyVoice3 import smoke test passed')"
 
   release:
     name: create-github-release
