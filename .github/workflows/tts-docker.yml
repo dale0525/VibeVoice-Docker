@@ -276,6 +276,15 @@ jobs:
           cache-from: type=registry,ref=${{ steps.vars.outputs.app_cache_ref }}
           cache-to: type=registry,ref=${{ steps.vars.outputs.app_cache_ref }},mode=max
 
+      - name: CosyVoice3 import smoke test
+        if: matrix.model_tag == 'cosyvoice3-0.5b'
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.version }}-${{ matrix.model_tag }}"
+          docker pull "${IMAGE_REF}"
+          docker run --rm --entrypoint python "${IMAGE_REF}" -c "import importlib, sys; sys.path.append('/opt/CosyVoice'); sys.path.append('/opt/CosyVoice/third_party/Matcha-TTS'); import hydra; importlib.import_module('cosyvoice.flow.flow_matching'); print('CosyVoice3 import smoke test passed')"
+
   release:
     name: create-github-release
     needs: [determine-models, build]
