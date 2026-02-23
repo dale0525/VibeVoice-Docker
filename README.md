@@ -232,6 +232,7 @@ pixi run up
   - 默认全量构建 4 个模型
   - 可勾选 `rebuild_base=true` 强制重建 base 镜像
 - base 镜像（`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新
+  - `Dockerfile.base` 仅改到 MOSS/Cosy 专属分支时，只重建对应模型的 base；改到公共区域时重建全部模型的 base
 
 文件变更与模型更新对应关系（push 到 `main`）：
 
@@ -241,4 +242,5 @@ pixi run up
 | `Dockerfile.7b` | `7b` |
 | `Dockerfile.moss` | `moss-ttsd-v1.0` |
 | `Dockerfile.cosy` | `cosyvoice3-0.5b` |
-| `Dockerfile.app` / `Dockerfile.base` / `requirements.txt` / `app/**` / `scripts/**` / `VibeVoice/**` | 全部模型（`1.5b`、`7b`、`moss-ttsd-v1.0`、`cosyvoice3-0.5b`） |
+| `Dockerfile.base`（仅改到 MOSS/Cosy 专属分支） | 仅对应模型（`moss-ttsd-v1.0` 或 `cosyvoice3-0.5b`） |
+| `Dockerfile.base`（改到公共区域） / `Dockerfile.app` / `requirements.txt` / `app/**` / `scripts/**` / `VibeVoice/**` | 全部模型（`1.5b`、`7b`、`moss-ttsd-v1.0`、`cosyvoice3-0.5b`） |

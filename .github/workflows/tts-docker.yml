@@ -70,12 +70,16 @@ jobs:
             echo "${CHANGED}"
 
             NEED_ALL="0"
+            BASE_FILE_CHANGED="0"
 
             while IFS= read -r file; do
               [[ -z "${file}" ]] && continue
               case "${file}" in
-                Dockerfile.app|Dockerfile.base|requirements.txt)
+                Dockerfile.app|requirements.txt)
                   NEED_ALL="1"
+                  ;;
+                Dockerfile.base)
+                  BASE_FILE_CHANGED="1"
                   ;;
                 app/*|scripts/*|VibeVoice/*)
                   NEED_ALL="1"
@@ -94,6 +98,49 @@ jobs:
                   ;;
               esac
             done <<< "${CHANGED}"
+
+            # Dockerfile.base 做细粒度判定：
+            # - 仅变更模型专属分支（moss / cosy）时，只构建对应模型
+            # - 触及公共区域或无法判断时，保守全量构建
+            if [[ "${BASE_FILE_CHANGED}" == "1" && "${NEED_ALL}" != "1" ]]; then
+              BASE_HUNKS_NEW_LINES="$(
+                git diff --unified=0 "${BEFORE}" "${AFTER}" -- Dockerfile.base | \
+                awk '/^@@ /{h=$3; sub(/^\+/,"",h); split(h,a,","); start=a[1]; len=(a[2]==""?1:a[2]); if (len > 0) {for (i=start; i<start+len; i++) print i}}'
+              )"
+
+              MOSS_START="$(grep -n 'if \[ "\${MODEL_ID}" = "moss-ttsd-v1.0" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
+              COSY_START="$(grep -n 'elif \[ "\${MODEL_ID}" = "cosyvoice3-0.5b" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
+              COSY_END=""
+              if [[ "${COSY_START}" =~ ^[0-9]+$ ]]; then
+                COSY_END="$(awk -v start="${COSY_START}" 'NR >= start && $0 ~ /^[[:space:]]*fi[[:space:]]*$/ {print NR; exit}' Dockerfile.base || true)"
+              fi
+
+              BASE_TOUCHED_COMMON="0"
+              BASE_TOUCHED_MODEL_BLOCK="0"
+
+              if [[ -z "${BASE_HUNKS_NEW_LINES}" ]]; then
+                BASE_TOUCHED_COMMON="1"
+              else
+                while IFS= read -r line_no; do
+                  [[ -z "${line_no}" ]] && continue
+                  if [[ "${MOSS_START}" =~ ^[0-9]+$ && "${COSY_START}" =~ ^[0-9]+$ ]] \
+                    && (( line_no >= MOSS_START && line_no < COSY_START )); then
+                    NEED_MOSS="1"
+                    BASE_TOUCHED_MODEL_BLOCK="1"
+                  elif [[ "${COSY_START}" =~ ^[0-9]+$ && "${COSY_END}" =~ ^[0-9]+$ ]] \
+                    && (( line_no >= COSY_START && line_no <= COSY_END )); then
+                    NEED_COSY="1"
+                    BASE_TOUCHED_MODEL_BLOCK="1"
+                  else
+                    BASE_TOUCHED_COMMON="1"
+                  fi
+                done <<< "${BASE_HUNKS_NEW_LINES}"
+              fi
+
+              if [[ "${BASE_TOUCHED_COMMON}" == "1" || "${BASE_TOUCHED_MODEL_BLOCK}" != "1" ]]; then
+                NEED_ALL="1"
+              fi
+            fi
 
             # 保守兜底：如果 changed files 为空，默认全量构建，避免误跳过。
             if [[ -z "${CHANGED}" ]]; then
@@ -229,10 +276,11 @@ jobs:
             NEED_BASE="1"
           fi
 
-          # push 触发：若 base 相关文件变更，则重建 base
+          # push 触发：按改动范围判定当前模型是否需要重建 base
           if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
             BEFORE="${{ github.event.before }}"
             AFTER="${{ github.sha }}"
+            CURRENT_MODEL_TAG="${{ matrix.model_tag }}"
 
             if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
               CHANGED="$(git diff --name-only "${BEFORE}" "${AFTER}")"
@@ -240,8 +288,52 @@ jobs:
               CHANGED="$(git show --name-only --pretty='' "${AFTER}")"
             fi
 
-            if echo "${CHANGED}" | grep -E '^(requirements\.txt|scripts/download_models\.py|Dockerfile\.base)$' >/dev/null; then
+            # requirements 与下载脚本改动会影响所有模型的 base。
+            if echo "${CHANGED}" | grep -E '^(requirements\.txt|scripts/download_models\.py)$' >/dev/null; then
               NEED_BASE="1"
+            fi
+
+            # Dockerfile.base 改动：仅在触及当前模型专属分支或公共区域时重建当前模型的 base。
+            if [[ "${NEED_BASE}" != "1" ]] && echo "${CHANGED}" | grep -E '^Dockerfile\.base$' >/dev/null; then
+              BASE_HUNKS_NEW_LINES="$(
+                git diff --unified=0 "${BEFORE}" "${AFTER}" -- Dockerfile.base | \
+                awk '/^@@ /{h=$3; sub(/^\+/,"",h); split(h,a,","); start=a[1]; len=(a[2]==""?1:a[2]); if (len > 0) {for (i=start; i<start+len; i++) print i}}'
+              )"
+
+              MOSS_START="$(grep -n 'if \[ "\${MODEL_ID}" = "moss-ttsd-v1.0" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
+              COSY_START="$(grep -n 'elif \[ "\${MODEL_ID}" = "cosyvoice3-0.5b" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
+              COSY_END=""
+              if [[ "${COSY_START}" =~ ^[0-9]+$ ]]; then
+                COSY_END="$(awk -v start="${COSY_START}" 'NR >= start && $0 ~ /^[[:space:]]*fi[[:space:]]*$/ {print NR; exit}' Dockerfile.base || true)"
+              fi
+
+              BASE_TOUCHED_COMMON="0"
+              BASE_TOUCHED_CURRENT_MODEL_BLOCK="0"
+
+              if [[ -z "${BASE_HUNKS_NEW_LINES}" ]]; then
+                BASE_TOUCHED_COMMON="1"
+              else
+                while IFS= read -r line_no; do
+                  [[ -z "${line_no}" ]] && continue
+                  if [[ "${MOSS_START}" =~ ^[0-9]+$ && "${COSY_START}" =~ ^[0-9]+$ ]] \
+                    && (( line_no >= MOSS_START && line_no < COSY_START )); then
+                    if [[ "${CURRENT_MODEL_TAG}" == "moss-ttsd-v1.0" ]]; then
+                      BASE_TOUCHED_CURRENT_MODEL_BLOCK="1"
+                    fi
+                  elif [[ "${COSY_START}" =~ ^[0-9]+$ && "${COSY_END}" =~ ^[0-9]+$ ]] \
+                    && (( line_no >= COSY_START && line_no <= COSY_END )); then
+                    if [[ "${CURRENT_MODEL_TAG}" == "cosyvoice3-0.5b" ]]; then
+                      BASE_TOUCHED_CURRENT_MODEL_BLOCK="1"
+                    fi
+                  else
+                    BASE_TOUCHED_COMMON="1"
+                  fi
+                done <<< "${BASE_HUNKS_NEW_LINES}"
+              fi
+
+              if [[ "${BASE_TOUCHED_COMMON}" == "1" || "${BASE_TOUCHED_CURRENT_MODEL_BLOCK}" == "1" ]]; then
+                NEED_BASE="1"
+              fi
             fi
           fi
 
