@@ -32,6 +32,11 @@ WORKDIR /opt
 ARG MODEL_ID=vibevoice-1.5b
 COPY requirements.txt /tmp/requirements.txt
 RUN set -eux; \
+    if [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends g++; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi; \
     pip install --no-cache-dir -r /tmp/requirements.txt; \
     if [ "${MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
       pip install --no-cache-dir \
