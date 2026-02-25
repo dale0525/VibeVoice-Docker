@@ -57,10 +57,11 @@ RUN set -eux; \
         "wetext==0.0.4" \
         "wget==3.2" \
         "x-transformers==2.11.24"; \
-    # Install CUDA12 ORT wheel from official CUDA12 feed to avoid CPU fallback from mismatched CUDA11 builds.
+    # Install CUDA12 ORT wheel with multi-index fallback (mirror -> ORT CUDA12 feed -> PyPI).
     pip install --no-cache-dir \
-        --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/" \
-        "onnxruntime-gpu==1.18.0"; \
+        --extra-index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/" \
+        --extra-index-url "https://pypi.org/simple/" \
+        "onnxruntime-gpu==1.19.2"; \
     pip install --no-cache-dir --no-build-isolation \
         "openai-whisper==20231117"
 
