@@ -149,8 +149,40 @@ class ModelManager:
 
         fp16 = device == "cuda" and dtype in {torch.float16, torch.bfloat16}
         model = AutoModel(model_dir=str(model_path), fp16=fp16)
+        self._ensure_cosyvoice3_cuda_provider(model, device=device)
         sample_rate = int(getattr(model, "sample_rate", 24000))
         return None, model, sample_rate
+
+    def _ensure_cosyvoice3_cuda_provider(self, model: Any, device: str) -> None:
+        if device != "cuda":
+            return
+
+        frontend = getattr(model, "frontend", None)
+        if frontend is None:
+            raise RuntimeError(
+                "CosyVoice3 is running on CUDA but frontend is unavailable; refusing to fall back to CPU."
+            )
+
+        tokenizer_session = getattr(frontend, "speech_tokenizer_session", None)
+        if tokenizer_session is None:
+            raise RuntimeError(
+                "CosyVoice3 is running on CUDA but speech tokenizer session is unavailable; refusing to fall back to CPU."
+            )
+
+        try:
+            providers = list(tokenizer_session.get_providers())
+        except Exception as exc:
+            raise RuntimeError(
+                "CosyVoice3 is running on CUDA but failed to query onnxruntime providers; refusing to fall back to CPU."
+            ) from exc
+
+        if "CUDAExecutionProvider" in providers:
+            return
+
+        raise RuntimeError(
+            "CosyVoice3 detected CUDA but onnxruntime speech tokenizer is not using CUDAExecutionProvider "
+            f"(providers={providers}); check onnxruntime-gpu CUDA dependencies, refusing to fall back to CPU."
+        )
 
     def get(self, model_id: ModelId) -> LoadedModel:
         with self._lock:

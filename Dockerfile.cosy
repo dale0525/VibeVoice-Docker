@@ -48,7 +48,6 @@ RUN set -eux; \
         "numpy==1.26.4" \
         "omegaconf==2.3.0" \
         "onnx==1.16.0" \
-        "onnxruntime-gpu==1.18.0" \
         "pyarrow==18.1.0" \
         "pyworld==0.3.4" \
         "tiktoken==0.12.0" \
@@ -58,6 +57,10 @@ RUN set -eux; \
         "wetext==0.0.4" \
         "wget==3.2" \
         "x-transformers==2.11.24"; \
+    # Install CUDA12 ORT wheel from official CUDA12 feed to avoid CPU fallback from mismatched CUDA11 builds.
+    pip install --no-cache-dir \
+        --index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/" \
+        "onnxruntime-gpu==1.18.0"; \
     pip install --no-cache-dir --no-build-isolation \
         "openai-whisper==20231117"
 

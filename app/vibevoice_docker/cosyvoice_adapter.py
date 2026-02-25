@@ -4,6 +4,8 @@ import re
 
 
 _SPEAKER_LINE_RE = re.compile(r"^\s*speaker\s*\d+\s*:\s*(.+?)\s*$", re.IGNORECASE)
+_COSYVOICE3_SYSTEM_PROMPT = "You are a helpful assistant."
+_COSYVOICE3_END_OF_PROMPT = "<|endofprompt|>"
 
 
 def speaker_script_to_cosy_text(script: str) -> str:
@@ -43,10 +45,9 @@ def _extract_prompt_excerpt(text: str, max_chars: int = 120) -> str:
 
 def build_cosy_prompt_text(prompt_text: str | None, tts_text: str) -> str:
     provided = (prompt_text or "").strip()
-    if provided:
-        return provided
+    if not provided:
+        provided = _extract_prompt_excerpt(tts_text) or "Hello."
 
-    fallback = _extract_prompt_excerpt(tts_text)
-    if fallback:
-        return fallback
-    return "Hello."
+    if _COSYVOICE3_END_OF_PROMPT in provided:
+        return provided
+    return f"{_COSYVOICE3_SYSTEM_PROMPT}{_COSYVOICE3_END_OF_PROMPT}{provided}"
