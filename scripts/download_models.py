@@ -34,26 +34,39 @@ def _normalize_model_id(value: Optional[str]) -> str:
         return "vibevoice-1.5b"
 
     v = value.strip().lower()
+    # model-block:start:vibevoice-1.5b
     if v in {"vibevoice-1.5b", "1.5b", "vibevoice-1.5"}:
         return "vibevoice-1.5b"
+    # model-block:end:vibevoice-1.5b
+    # model-block:start:vibevoice-7b
     if v in {"vibevoice-7b", "7b", "vibevoice-7"}:
         return "vibevoice-7b"
+    # model-block:end:vibevoice-7b
+    # model-block:start:moss-ttsd-v1.0
     if v in {"moss-ttsd-v1.0", "moss_ttsd", "moss-ttsd", "moss"}:
         return "moss-ttsd-v1.0"
+    # model-block:end:moss-ttsd-v1.0
+    # model-block:start:cosyvoice3-0.5b
     if v in {"cosyvoice3-0.5b", "cosyvoice3", "cosy3", "fun-cosyvoice3-0.5b"}:
         return "cosyvoice3-0.5b"
+    # model-block:end:cosyvoice3-0.5b
     raise ValueError(f"Unsupported MODEL_ID: {value!r}")
 
 
 def _default_vibevoice_index_sha256(model_id: str) -> Optional[str]:
+    # model-block:start:vibevoice-1.5b
     if model_id == "vibevoice-1.5b":
         return "067db9b10fdecee3a5588aa00206794156c7125f5e85f3f2234e0e6d821ee629"
+    # model-block:end:vibevoice-1.5b
+    # model-block:start:vibevoice-7b
     if model_id == "vibevoice-7b":
         return "dbcfc6e307494bc87684471872f3d8b785cb68b3589b6b306c43fde629b88ebd"
+    # model-block:end:vibevoice-7b
     return None
 
 
 def _build_targets(model_id: str) -> list[DownloadTarget]:
+    # model-block:start:vibevoice-1.5b
     if model_id == "vibevoice-1.5b":
         return [
             DownloadTarget(
@@ -62,6 +75,8 @@ def _build_targets(model_id: str) -> list[DownloadTarget]:
                 expected_index_sha256=_default_vibevoice_index_sha256(model_id),
             )
         ]
+    # model-block:end:vibevoice-1.5b
+    # model-block:start:vibevoice-7b
     if model_id == "vibevoice-7b":
         return [
             DownloadTarget(
@@ -70,6 +85,8 @@ def _build_targets(model_id: str) -> list[DownloadTarget]:
                 expected_index_sha256=_default_vibevoice_index_sha256(model_id),
             )
         ]
+    # model-block:end:vibevoice-7b
+    # model-block:start:moss-ttsd-v1.0
     if model_id == "moss-ttsd-v1.0":
         return [
             DownloadTarget(
@@ -81,6 +98,8 @@ def _build_targets(model_id: str) -> list[DownloadTarget]:
                 local_dir_name="MOSS-Audio-Tokenizer",
             ),
         ]
+    # model-block:end:moss-ttsd-v1.0
+    # model-block:start:cosyvoice3-0.5b
     if model_id == "cosyvoice3-0.5b":
         return [
             DownloadTarget(
@@ -88,6 +107,7 @@ def _build_targets(model_id: str) -> list[DownloadTarget]:
                 local_dir_name="Fun-CosyVoice3-0.5B",
             )
         ]
+    # model-block:end:cosyvoice3-0.5b
     raise ValueError(f"Unsupported model_id: {model_id!r}")
 
 

@@ -46,16 +46,156 @@ jobs:
         run: |
           set -euo pipefail
 
-          NEED_15="0"
-          NEED_7B="0"
-          NEED_MOSS="0"
-          NEED_COSY="0"
+          declare -A MODEL_TAG_BY_ID=(
+            ["vibevoice-1.5b"]="1.5b"
+            ["vibevoice-7b"]="7b"
+            ["moss-ttsd-v1.0"]="moss-ttsd-v1.0"
+            ["cosyvoice3-0.5b"]="cosyvoice3-0.5b"
+          )
+          declare -A APP_TARGET_BY_ID=(
+            ["vibevoice-1.5b"]="app-vibevoice"
+            ["vibevoice-7b"]="app-vibevoice"
+            ["moss-ttsd-v1.0"]="app"
+            ["cosyvoice3-0.5b"]="app"
+          )
+          MODEL_IDS=(
+            "vibevoice-1.5b"
+            "vibevoice-7b"
+            "moss-ttsd-v1.0"
+            "cosyvoice3-0.5b"
+          )
+
+          declare -A SELECT_MODEL=()
+          declare -A NEED_BASE_MODEL=()
+          for model_id in "${MODEL_IDS[@]}"; do
+            SELECT_MODEL["${model_id}"]="0"
+            NEED_BASE_MODEL["${model_id}"]="0"
+          done
+
+          mark_selected() {
+            local model_id="$1"
+            [[ -n "${MODEL_TAG_BY_ID[$model_id]+x}" ]] || return 0
+            SELECT_MODEL["${model_id}"]="1"
+          }
+
+          mark_base() {
+            local model_id="$1"
+            [[ -n "${MODEL_TAG_BY_ID[$model_id]+x}" ]] || return 0
+            SELECT_MODEL["${model_id}"]="1"
+            NEED_BASE_MODEL["${model_id}"]="1"
+          }
+
+          mark_all_selected() {
+            local model_id
+            for model_id in "${MODEL_IDS[@]}"; do
+              mark_selected "${model_id}"
+            done
+          }
+
+          mark_all_base() {
+            local model_id
+            for model_id in "${MODEL_IDS[@]}"; do
+              mark_base "${model_id}"
+            done
+          }
+
+          mark_vibevoice_selected() {
+            mark_selected "vibevoice-1.5b"
+            mark_selected "vibevoice-7b"
+          }
+
+          changed_new_lines() {
+            local file="$1"
+            if [[ -n "${BEFORE:-}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
+              git diff --unified=0 "${BEFORE}" "${AFTER}" -- "${file}" | \
+                awk '/^@@ /{h=$3; sub(/^\+/,"",h); split(h,a,","); start=a[1]; len=(a[2]==""?1:a[2]); if (len > 0) {for (i=start; i<start+len; i++) print i}}'
+            else
+              git show --unified=0 "${AFTER}" -- "${file}" | \
+                awk '/^@@ /{h=$3; sub(/^\+/,"",h); split(h,a,","); start=a[1]; len=(a[2]==""?1:a[2]); if (len > 0) {for (i=start; i<start+len; i++) print i}}'
+            fi
+          }
+
+          analyze_marked_file() {
+            local file="$1"
+            local lines="$2"
+            local ranges
+            ranges="$(
+              awk '
+                /model-block:start:/ {
+                  id=$0
+                  sub(/^.*model-block:start:/, "", id)
+                  sub(/[[:space:]]*$/, "", id)
+                  stack[id, ++count[id]] = NR
+                  next
+                }
+                /model-block:end:/ {
+                  id=$0
+                  sub(/^.*model-block:end:/, "", id)
+                  sub(/[[:space:]]*$/, "", id)
+                  idx = count[id]
+                  if (idx > 0) {
+                    start = stack[id, idx]
+                    if (start > 0) {
+                      printf "%s %d %d\n", id, start, NR
+                      stack[id, idx] = 0
+                      count[id] = idx - 1
+                    }
+                  }
+                }
+              ' "${file}"
+            )"
+
+            local touched_common="0"
+            local touched_models=""
+            if [[ -z "${lines}" ]]; then
+              touched_common="1"
+            else
+              while IFS= read -r line_no; do
+                [[ -z "${line_no}" ]] && continue
+
+                local in_model_block="0"
+                local hit_models=""
+                if [[ -n "${ranges}" ]]; then
+                  while IFS=' ' read -r range_model range_start range_end; do
+                    [[ -z "${range_model}" ]] && continue
+                    if (( line_no >= range_start && line_no <= range_end )); then
+                      in_model_block="1"
+                      if ! grep -Fxq "${range_model}" <<< "${hit_models}"; then
+                        hit_models="${hit_models}${range_model}"$'\n'
+                      fi
+                    fi
+                  done <<< "${ranges}"
+                fi
+
+                if [[ "${in_model_block}" == "1" ]]; then
+                  touched_models="${touched_models}${hit_models}"
+                else
+                  touched_common="1"
+                fi
+              done <<< "${lines}"
+            fi
+
+            MARKED_TOUCHED_COMMON="${touched_common}"
+            MARKED_TOUCHED_MODELS="$(printf "%s" "${touched_models}" | sed '/^$/d' | sort -u || true)"
+          }
+
+          mark_base_from_marked_file() {
+            local file="$1"
+            local lines
+            lines="$(changed_new_lines "${file}")"
+            analyze_marked_file "${file}" "${lines}"
+            if [[ "${MARKED_TOUCHED_COMMON}" == "1" ]]; then
+              mark_all_base
+              return
+            fi
+            while IFS= read -r touched_model; do
+              [[ -z "${touched_model}" ]] && continue
+              mark_base "${touched_model}"
+            done <<< "${MARKED_TOUCHED_MODELS}"
+          }
 
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-            NEED_15="1"
-            NEED_7B="1"
-            NEED_MOSS="1"
-            NEED_COSY="1"
+            mark_all_selected
           else
             BEFORE="${{ github.event.before }}"
             AFTER="${{ github.sha }}"
@@ -69,105 +209,67 @@ jobs:
             echo "Changed files:"
             echo "${CHANGED}"
 
-            NEED_ALL="0"
-            BASE_FILE_CHANGED="0"
-
-            while IFS= read -r file; do
-              [[ -z "${file}" ]] && continue
-              case "${file}" in
-                Dockerfile.app|requirements.txt)
-                  NEED_ALL="1"
-                  ;;
-                Dockerfile.base)
-                  BASE_FILE_CHANGED="1"
-                  ;;
-                app/*|scripts/*|VibeVoice/*)
-                  NEED_ALL="1"
-                  ;;
-                Dockerfile)
-                  NEED_15="1"
-                  ;;
-                Dockerfile.7b)
-                  NEED_7B="1"
-                  ;;
-                Dockerfile.moss)
-                  NEED_MOSS="1"
-                  ;;
-                Dockerfile.cosy)
-                  NEED_COSY="1"
-                  ;;
-              esac
-            done <<< "${CHANGED}"
-
-            # Dockerfile.base 做细粒度判定：
-            # - 仅变更模型专属分支（moss / cosy）时，只构建对应模型
-            # - 触及公共区域或无法判断时，保守全量构建
-            if [[ "${BASE_FILE_CHANGED}" == "1" && "${NEED_ALL}" != "1" ]]; then
-              BASE_HUNKS_NEW_LINES="$(
-                git diff --unified=0 "${BEFORE}" "${AFTER}" -- Dockerfile.base | \
-                awk '/^@@ /{h=$3; sub(/^\+/,"",h); split(h,a,","); start=a[1]; len=(a[2]==""?1:a[2]); if (len > 0) {for (i=start; i<start+len; i++) print i}}'
-              )"
-
-              MOSS_START="$(grep -n 'if \[ "\${MODEL_ID}" = "moss-ttsd-v1.0" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
-              COSY_START="$(grep -n 'elif \[ "\${MODEL_ID}" = "cosyvoice3-0.5b" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
-              COSY_END=""
-              if [[ "${COSY_START}" =~ ^[0-9]+$ ]]; then
-                COSY_END="$(awk -v start="${COSY_START}" 'NR >= start && $0 ~ /^[[:space:]]*fi[[:space:]]*$/ {print NR; exit}' Dockerfile.base || true)"
-              fi
-
-              BASE_TOUCHED_COMMON="0"
-              BASE_TOUCHED_MODEL_BLOCK="0"
-
-              if [[ -z "${BASE_HUNKS_NEW_LINES}" ]]; then
-                BASE_TOUCHED_COMMON="1"
-              else
-                while IFS= read -r line_no; do
-                  [[ -z "${line_no}" ]] && continue
-                  if [[ "${MOSS_START}" =~ ^[0-9]+$ && "${COSY_START}" =~ ^[0-9]+$ ]] \
-                    && (( line_no >= MOSS_START && line_no < COSY_START )); then
-                    NEED_MOSS="1"
-                    BASE_TOUCHED_MODEL_BLOCK="1"
-                  elif [[ "${COSY_START}" =~ ^[0-9]+$ && "${COSY_END}" =~ ^[0-9]+$ ]] \
-                    && (( line_no >= COSY_START && line_no <= COSY_END )); then
-                    NEED_COSY="1"
-                    BASE_TOUCHED_MODEL_BLOCK="1"
-                  else
-                    BASE_TOUCHED_COMMON="1"
-                  fi
-                done <<< "${BASE_HUNKS_NEW_LINES}"
-              fi
-
-              if [[ "${BASE_TOUCHED_COMMON}" == "1" || "${BASE_TOUCHED_MODEL_BLOCK}" != "1" ]]; then
-                NEED_ALL="1"
-              fi
-            fi
-
-            # 保守兜底：如果 changed files 为空，默认全量构建，避免误跳过。
             if [[ -z "${CHANGED}" ]]; then
-              NEED_ALL="1"
-            fi
-
-            if [[ "${NEED_ALL}" == "1" ]]; then
-              NEED_15="1"
-              NEED_7B="1"
-              NEED_MOSS="1"
-              NEED_COSY="1"
+              mark_all_base
+            else
+              while IFS= read -r file; do
+                [[ -z "${file}" ]] && continue
+                case "${file}" in
+                  Dockerfile.app|app/*)
+                    # app 层改动：所有模型都需要重建 app 层
+                    mark_all_selected
+                    ;;
+                  VibeVoice/*)
+                    # VibeVoice 源码只影响 VibeVoice 系列镜像
+                    mark_vibevoice_selected
+                    ;;
+                  requirements.txt)
+                    mark_all_base
+                    ;;
+                  Dockerfile.base)
+                    mark_base_from_marked_file "Dockerfile.base"
+                    ;;
+                  scripts/download_models.py)
+                    mark_base_from_marked_file "scripts/download_models.py"
+                    ;;
+                  scripts/*)
+                    # 其他脚本改动保守处理为 app 全量
+                    mark_all_selected
+                    ;;
+                  Dockerfile)
+                    mark_selected "vibevoice-1.5b"
+                    ;;
+                  Dockerfile.7b)
+                    mark_selected "vibevoice-7b"
+                    ;;
+                  Dockerfile.moss)
+                    mark_selected "moss-ttsd-v1.0"
+                    ;;
+                  Dockerfile.cosy)
+                    mark_selected "cosyvoice3-0.5b"
+                    ;;
+                esac
+              done <<< "${CHANGED}"
             fi
           fi
 
           SELECTED='[]'
-          if [[ "${NEED_15}" == "1" ]]; then
-            SELECTED="$(jq -c '. + [{"model_tag":"1.5b","model_id":"vibevoice-1.5b"}]' <<< "${SELECTED}")"
-          fi
-          if [[ "${NEED_7B}" == "1" ]]; then
-            SELECTED="$(jq -c '. + [{"model_tag":"7b","model_id":"vibevoice-7b"}]' <<< "${SELECTED}")"
-          fi
-          if [[ "${NEED_MOSS}" == "1" ]]; then
-            SELECTED="$(jq -c '. + [{"model_tag":"moss-ttsd-v1.0","model_id":"moss-ttsd-v1.0"}]' <<< "${SELECTED}")"
-          fi
-          if [[ "${NEED_COSY}" == "1" ]]; then
-            SELECTED="$(jq -c '. + [{"model_tag":"cosyvoice3-0.5b","model_id":"cosyvoice3-0.5b"}]' <<< "${SELECTED}")"
-          fi
+          for model_id in "${MODEL_IDS[@]}"; do
+            if [[ "${SELECT_MODEL[$model_id]}" == "1" ]]; then
+              model_tag="${MODEL_TAG_BY_ID[$model_id]}"
+              app_target="${APP_TARGET_BY_ID[$model_id]}"
+              need_base="${NEED_BASE_MODEL[$model_id]}"
+              SELECTED="$(
+                jq -c \
+                  --arg model_tag "${model_tag}" \
+                  --arg model_id "${model_id}" \
+                  --arg app_target "${app_target}" \
+                  --arg need_base "${need_base}" \
+                  '. + [{"model_tag":$model_tag,"model_id":$model_id,"app_target":$app_target,"need_base":$need_base}]' \
+                  <<< "${SELECTED}"
+              )"
+            fi
+          done
 
           MATRIX="$(jq -cn --argjson include "${SELECTED}" '{include:$include}')"
           MODEL_TAGS_JSON="$(jq -cn --argjson items "${SELECTED}" '$items | map(.model_tag)')"
@@ -197,8 +299,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # 需要 diff changed files 来判断是否重建 base 镜像
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Show disk usage (before cleanup)
         run: |
@@ -263,9 +364,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          NEED_BASE="0"
+          NEED_BASE="${{ matrix.need_base }}"
           BASE_REF="${{ steps.vars.outputs.base_ref }}"
           CURRENT_MODEL_TAG="${{ matrix.model_tag }}"
+
+          if [[ -z "${NEED_BASE}" ]]; then
+            NEED_BASE="0"
+          fi
 
           # base 镜像不存在时必须先构建（例如首次运行）
           if ! docker buildx imagetools inspect "${BASE_REF}" >/dev/null 2>&1; then
@@ -275,66 +380,6 @@ jobs:
           # 主动触发：workflow_dispatch 可强制重建
           if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${{ inputs.rebuild_base }}" == "true" ]]; then
             NEED_BASE="1"
-          fi
-
-          # push 触发：按改动范围判定当前模型是否需要重建 base
-          if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-            BEFORE="${{ github.event.before }}"
-            AFTER="${{ github.sha }}"
-
-            if [[ -n "${BEFORE}" && "${BEFORE}" != "0000000000000000000000000000000000000000" ]]; then
-              CHANGED="$(git diff --name-only "${BEFORE}" "${AFTER}")"
-            else
-              CHANGED="$(git show --name-only --pretty='' "${AFTER}")"
-            fi
-
-            # requirements 与下载脚本改动会影响所有模型的 base。
-            if echo "${CHANGED}" | grep -E '^(requirements\.txt|scripts/download_models\.py)$' >/dev/null; then
-              NEED_BASE="1"
-            fi
-
-            # Dockerfile.base 改动：仅在触及当前模型专属分支或公共区域时重建当前模型的 base。
-            if [[ "${NEED_BASE}" != "1" ]] && echo "${CHANGED}" | grep -E '^Dockerfile\.base$' >/dev/null; then
-              BASE_HUNKS_NEW_LINES="$(
-                git diff --unified=0 "${BEFORE}" "${AFTER}" -- Dockerfile.base | \
-                awk '/^@@ /{h=$3; sub(/^\+/,"",h); split(h,a,","); start=a[1]; len=(a[2]==""?1:a[2]); if (len > 0) {for (i=start; i<start+len; i++) print i}}'
-              )"
-
-              MOSS_START="$(grep -n 'if \[ "\${MODEL_ID}" = "moss-ttsd-v1.0" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
-              COSY_START="$(grep -n 'elif \[ "\${MODEL_ID}" = "cosyvoice3-0.5b" \]; then' Dockerfile.base | head -n1 | cut -d: -f1 || true)"
-              COSY_END=""
-              if [[ "${COSY_START}" =~ ^[0-9]+$ ]]; then
-                COSY_END="$(awk -v start="${COSY_START}" 'NR >= start && $0 ~ /^[[:space:]]*fi[[:space:]]*$/ {print NR; exit}' Dockerfile.base || true)"
-              fi
-
-              BASE_TOUCHED_COMMON="0"
-              BASE_TOUCHED_CURRENT_MODEL_BLOCK="0"
-
-              if [[ -z "${BASE_HUNKS_NEW_LINES}" ]]; then
-                BASE_TOUCHED_COMMON="1"
-              else
-                while IFS= read -r line_no; do
-                  [[ -z "${line_no}" ]] && continue
-                  if [[ "${MOSS_START}" =~ ^[0-9]+$ && "${COSY_START}" =~ ^[0-9]+$ ]] \
-                    && (( line_no >= MOSS_START && line_no < COSY_START )); then
-                    if [[ "${CURRENT_MODEL_TAG}" == "moss-ttsd-v1.0" ]]; then
-                      BASE_TOUCHED_CURRENT_MODEL_BLOCK="1"
-                    fi
-                  elif [[ "${COSY_START}" =~ ^[0-9]+$ && "${COSY_END}" =~ ^[0-9]+$ ]] \
-                    && (( line_no >= COSY_START && line_no <= COSY_END )); then
-                    if [[ "${CURRENT_MODEL_TAG}" == "cosyvoice3-0.5b" ]]; then
-                      BASE_TOUCHED_CURRENT_MODEL_BLOCK="1"
-                    fi
-                  else
-                    BASE_TOUCHED_COMMON="1"
-                  fi
-                done <<< "${BASE_HUNKS_NEW_LINES}"
-              fi
-
-              if [[ "${BASE_TOUCHED_COMMON}" == "1" || "${BASE_TOUCHED_CURRENT_MODEL_BLOCK}" == "1" ]]; then
-                NEED_BASE="1"
-              fi
-            fi
           fi
 
           # 兜底自愈：若复用了历史 cosy base，但关键依赖缺失（如 hydra），则强制重建当前模型 base。
@@ -368,6 +413,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.app
+          target: ${{ matrix.app_target }}
           build-args: |
             BASE_IMAGE=${{ steps.vars.outputs.base_ref }}
           push: true

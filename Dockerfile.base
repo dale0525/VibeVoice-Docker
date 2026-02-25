@@ -28,73 +28,100 @@ RUN set -eux; \
 
 WORKDIR /opt
 
-# 依赖尽量放在 base 镜像，应用镜像更新时可复用
+# 基础构建参数
 ARG MODEL_ID=vibevoice-1.5b
-COPY requirements.txt /tmp/requirements.txt
-RUN set -eux; \
-    if [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
-      apt-get update; \
-      apt-get install -y --no-install-recommends g++; \
-      rm -rf /var/lib/apt/lists/*; \
-    fi; \
-    pip install --no-cache-dir -r /tmp/requirements.txt; \
-    if [ "${MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
-      pip install --no-cache-dir \
-        "transformers==5.0.0" \
-        "safetensors==0.6.2" \
-        "soundfile==0.13.1" \
-        "torchaudio==2.3.1" \
-        "tiktoken==0.12.0" \
-        "einops==0.8.1"; \
-    elif [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
-      pip install --no-cache-dir \
-        "conformer==0.3.2" \
-        "diffusers==0.29.0" \
-        "gdown==5.1.0" \
-        "hydra-core==1.3.2" \
-        "hyperpyyaml==1.2.3" \
-        "inflect==7.3.1" \
-        "librosa==0.10.2" \
-        "lightning==2.2.4" \
-        "matplotlib==3.7.5" \
-        "numpy==1.26.4" \
-        "omegaconf==2.3.0" \
-        "onnx==1.16.0" \
-        "pyarrow==18.1.0" \
-        "pyworld==0.3.4" \
-        "tiktoken==0.12.0" \
-        "rich==13.7.1" \
-        "torchaudio==2.3.1" \
-        "transformers==4.51.3" \
-        "wetext==0.0.4" \
-        "wget==3.2" \
-        "x-transformers==2.11.24"; \
-      # Install CUDA12 ORT wheel with multi-index fallback (mirror -> ORT CUDA12 feed -> PyPI).
-      pip install --no-cache-dir \
-        --extra-index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/" \
-        --extra-index-url "https://pypi.org/simple/" \
-        "onnxruntime-gpu==1.19.2"; \
-      pip install --no-cache-dir --no-build-isolation \
-        "openai-whisper==20231117"; \
-    fi
-
-# 在 base 镜像构建阶段下载模型（尽量保持该镜像不频繁更新，避免本地部署反复拉取大层）
 ENV MODEL_ID=${MODEL_ID}
 ENV MODELS_DIR=/models
 
 # ModelScope 缓存写到临时目录，构建结束前清理，避免把 cache 打进镜像层导致不稳定/变大
 ENV MODELSCOPE_CACHE=/tmp/modelscope-cache
 
+# 模型权重下载尽量前置，避免后续调试依赖时反复下载大文件
 COPY scripts/download_models.py /opt/scripts/download_models.py
+RUN pip install --no-cache-dir "modelscope==1.33.0"
 RUN python /opt/scripts/download_models.py; \
     rm -rf /tmp/modelscope-cache
 
+# 再安装通用依赖和模型专属依赖
+COPY requirements.txt /tmp/requirements.txt
 RUN set -eux; \
-    if [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
-      apt-get update; \
-      apt-get install -y --no-install-recommends git; \
-      rm -rf /var/lib/apt/lists/*; \
-      git clone --depth 1 https://github.com/FunAudioLLM/CosyVoice.git /opt/CosyVoice; \
-      cd /opt/CosyVoice; \
-      git submodule update --init --recursive; \
-    fi
+    pip install --no-cache-dir -r /tmp/requirements.txt; \
+    case "${MODEL_ID}" in \
+      # model-block:start:vibevoice-1.5b
+      "vibevoice-1.5b") \
+        true; \
+        ;; \
+      # model-block:end:vibevoice-1.5b
+      # model-block:start:vibevoice-7b
+      "vibevoice-7b") \
+        true; \
+        ;; \
+      # model-block:end:vibevoice-7b
+      # model-block:start:moss-ttsd-v1.0
+      "moss-ttsd-v1.0") \
+        pip install --no-cache-dir \
+          "transformers==5.0.0" \
+          "safetensors==0.6.2" \
+          "soundfile==0.13.1" \
+          "torchaudio==2.3.1" \
+          "tiktoken==0.12.0" \
+          "einops==0.8.1"; \
+        ;; \
+      # model-block:end:moss-ttsd-v1.0
+      # model-block:start:cosyvoice3-0.5b
+      "cosyvoice3-0.5b") \
+        apt-get update; \
+        apt-get install -y --no-install-recommends g++; \
+        rm -rf /var/lib/apt/lists/*; \
+        pip install --no-cache-dir \
+          "conformer==0.3.2" \
+          "diffusers==0.29.0" \
+          "gdown==5.1.0" \
+          "hydra-core==1.3.2" \
+          "hyperpyyaml==1.2.3" \
+          "inflect==7.3.1" \
+          "librosa==0.10.2" \
+          "lightning==2.2.4" \
+          "matplotlib==3.7.5" \
+          "numpy==1.26.4" \
+          "omegaconf==2.3.0" \
+          "onnx==1.16.0" \
+          "pyarrow==18.1.0" \
+          "pyworld==0.3.4" \
+          "tiktoken==0.12.0" \
+          "rich==13.7.1" \
+          "torchaudio==2.3.1" \
+          "transformers==4.51.3" \
+          "wetext==0.0.4" \
+          "wget==3.2" \
+          "x-transformers==2.11.24"; \
+        pip install --no-cache-dir \
+          --extra-index-url "https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/" \
+          --extra-index-url "https://pypi.org/simple/" \
+          "onnxruntime-gpu==1.19.2"; \
+        pip install --no-cache-dir --no-build-isolation \
+          "openai-whisper==20231117"; \
+        ;; \
+      # model-block:end:cosyvoice3-0.5b
+      *) \
+        echo "Unsupported MODEL_ID: ${MODEL_ID}"; \
+        exit 1; \
+        ;; \
+    esac
+
+RUN set -eux; \
+    case "${MODEL_ID}" in \
+      # model-block:start:cosyvoice3-0.5b
+      "cosyvoice3-0.5b") \
+        apt-get update; \
+        apt-get install -y --no-install-recommends git; \
+        rm -rf /var/lib/apt/lists/*; \
+        git clone --depth 1 https://github.com/FunAudioLLM/CosyVoice.git /opt/CosyVoice; \
+        cd /opt/CosyVoice; \
+        git submodule update --init --recursive; \
+        ;; \
+      # model-block:end:cosyvoice3-0.5b
+      *) \
+        true; \
+        ;; \
+    esac
