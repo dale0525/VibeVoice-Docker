@@ -17,14 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from vibevoice_docker.audio_formats import AudioFormat, audio_to_wav_bytes, wav_bytes_to_mp3_bytes
 from vibevoice_docker.cosyvoice_adapter import build_cosy_prompt_text, speaker_script_to_cosy_text
-from vibevoice_docker.moss_adapter import build_moss_prompt_text, speaker_script_to_moss_text
 from vibevoice_docker.model_manager import ModelId, ModelManager
 from vibevoice_docker.settings import Settings
 from vibevoice_docker.text_normalize import looks_like_speaker_script, normalize_single_speaker_script
-from vibevoice_docker.torch_compat import (
-    ensure_is_autocast_enabled_device_type_support,
-    ensure_pad_sequence_padding_side_support,
-)
 from vibevoice_docker.voices import Voice, VoiceStore
 
 
@@ -172,9 +167,7 @@ def _cuda_available() -> bool:
 @app.get("/v1/models")
 def list_models(_: None = Depends(require_api_key)) -> dict[str, Any]:
     now = int(time.time())
-    if settings.model_id == "moss-ttsd-v1.0":
-        owned_by = "openmoss"
-    elif settings.model_id == "cosyvoice3-0.5b":
+    if settings.model_id == "cosyvoice3-0.5b":
         owned_by = "funaudiollm"
     else:
         owned_by = "vibevoice"
@@ -467,33 +460,6 @@ async def create_speech_with_reference(
             pass
 
 
-def _load_mono_wav(path: Path):
-    import soundfile as sf
-    import torch
-
-    audio, sample_rate = sf.read(str(path), dtype="float32", always_2d=True)
-    wav = torch.from_numpy(audio).transpose(0, 1).contiguous()
-    if wav.shape[0] > 1:
-        wav = wav.mean(dim=0, keepdim=True)
-    return wav, int(sample_rate)
-
-
-def _resample_audio_linear(wav, orig_sr: int, target_sr: int):
-    if int(orig_sr) == int(target_sr):
-        return wav
-
-    import torch.nn.functional as F
-
-    new_num_samples = int(round(wav.shape[-1] * float(target_sr) / float(orig_sr)))
-    new_num_samples = max(1, new_num_samples)
-    return F.interpolate(
-        wav.unsqueeze(0),
-        size=new_num_samples,
-        mode="linear",
-        align_corners=False,
-    ).squeeze(0)
-
-
 def _run_inference_vibevoice(loaded, script: str, voice: Voice, cfg_scale: float):
     import torch
 
@@ -529,27 +495,6 @@ def _run_inference_vibevoice(loaded, script: str, voice: Voice, cfg_scale: float
     return outputs.speech_outputs[0], loaded.sample_rate
 
 
-def _decode_moss_audio(processor, outputs):
-    import torch
-
-    messages = processor.decode(outputs)
-    if not messages or messages[0] is None:
-        raise RuntimeError("No audio generated")
-
-    wav_segments = []
-    for wav in messages[0].audio_codes_list:
-        if isinstance(wav, torch.Tensor):
-            segment = wav.detach().to(dtype=torch.float32, device="cpu").reshape(-1)
-        else:
-            segment = torch.tensor(wav, dtype=torch.float32).reshape(-1)
-        if segment.numel() > 0:
-            wav_segments.append(segment)
-
-    if not wav_segments:
-        raise RuntimeError("No audio generated")
-    return torch.cat(wav_segments, dim=0).numpy()
-
-
 def _decode_cosyvoice_audio(outputs):
     import torch
 
@@ -575,47 +520,6 @@ def _decode_cosyvoice_audio(outputs):
     return torch.cat(wav_segments, dim=0).numpy()
 
 
-def _run_inference_moss_ttsd(loaded, script: str, voice: Voice):
-    import torch
-
-    ensure_is_autocast_enabled_device_type_support(torch_mod=torch)
-    ensure_pad_sequence_padding_side_support(torch_mod=torch)
-
-    processor = loaded.processor
-    model = loaded.model
-    sample_rate = int(loaded.sample_rate)
-
-    moss_text = speaker_script_to_moss_text(script)
-    prompt_text = build_moss_prompt_text(voice.prompt_text, moss_text)
-    full_text = f"{prompt_text} {moss_text}".strip()
-
-    wav, wav_sr = _load_mono_wav(voice.sample_path)
-    wav = _resample_audio_linear(wav, wav_sr, sample_rate)
-
-    reference_audio_codes = processor.encode_audios_from_wav([wav], sampling_rate=sample_rate)
-    prompt_audio = processor.encode_audios_from_wav([wav], sampling_rate=sample_rate)[0]
-    conversations = [
-        [
-            processor.build_user_message(text=full_text, reference=reference_audio_codes),
-            processor.build_assistant_message(audio_codes_list=[prompt_audio]),
-        ],
-    ]
-
-    batch = processor(conversations, mode="continuation")
-    with torch.no_grad():
-        outputs = model.generate(
-            input_ids=batch["input_ids"].to(loaded.device),
-            attention_mask=batch["attention_mask"].to(loaded.device),
-            max_new_tokens=2000,
-            audio_temperature=1.1,
-            audio_top_p=0.9,
-            audio_top_k=50,
-            audio_repetition_penalty=1.1,
-        )
-
-    return _decode_moss_audio(processor, outputs), sample_rate
-
-
 def _run_inference_cosyvoice3(loaded, script: str, voice: Voice):
     cosyvoice = loaded.model
     sample_rate = int(loaded.sample_rate)
@@ -634,8 +538,6 @@ def _run_inference_cosyvoice3(loaded, script: str, voice: Voice):
 
 def _run_inference(model_id: ModelId, script: str, voice: Voice, cfg_scale: float):
     loaded = model_manager.get(model_id)
-    if loaded.backend == "moss-ttsd":
-        return _run_inference_moss_ttsd(loaded, script=script, voice=voice)
     if loaded.backend == "cosyvoice3":
         return _run_inference_cosyvoice3(loaded, script=script, voice=voice)
     return _run_inference_vibevoice(loaded, script=script, voice=voice, cfg_scale=cfg_scale)

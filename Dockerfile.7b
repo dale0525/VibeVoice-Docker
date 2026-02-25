@@ -38,15 +38,7 @@ RUN set -eux; \
         rm -rf /var/lib/apt/lists/*; \
     fi; \
     pip install --no-cache-dir -r /tmp/requirements.txt; \
-    if [ "${MODEL_ID}" = "moss-ttsd-v1.0" ]; then \
-        pip install --no-cache-dir \
-            "transformers==5.0.0" \
-            "safetensors==0.6.2" \
-            "soundfile==0.13.1" \
-            "torchaudio==2.3.1" \
-            "tiktoken==0.12.0" \
-            "einops==0.8.1"; \
-    elif [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
+    if [ "${MODEL_ID}" = "cosyvoice3-0.5b" ]; then \
         pip install --no-cache-dir \
             "conformer==0.3.2" \
             "diffusers==0.29.0" \

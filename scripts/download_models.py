@@ -3,7 +3,7 @@
 
 环境变量：
 - MODELS_DIR: 模型落盘目录，默认 /models
-- MODEL_ID: 模型选择（vibevoice-1.5b / vibevoice-7b / moss-ttsd-v1.0 / cosyvoice3-0.5b）
+- MODEL_ID: 模型选择（vibevoice-1.5b / vibevoice-7b / cosyvoice3-0.5b）
 - MODELSCOPE_REVISION: ModelScope revision（可选）
 - MODELSCOPE_CACHE: ModelScope 下载缓存目录（建议指向临时目录）
 - EXPECTED_INDEX_SHA256: 仅对 VibeVoice 生效，可覆盖默认 sha256 校验值
@@ -42,10 +42,6 @@ def _normalize_model_id(value: Optional[str]) -> str:
     if v in {"vibevoice-7b", "7b", "vibevoice-7"}:
         return "vibevoice-7b"
     # model-block:end:vibevoice-7b
-    # model-block:start:moss-ttsd-v1.0
-    if v in {"moss-ttsd-v1.0", "moss_ttsd", "moss-ttsd", "moss"}:
-        return "moss-ttsd-v1.0"
-    # model-block:end:moss-ttsd-v1.0
     # model-block:start:cosyvoice3-0.5b
     if v in {"cosyvoice3-0.5b", "cosyvoice3", "cosy3", "fun-cosyvoice3-0.5b"}:
         return "cosyvoice3-0.5b"
@@ -86,19 +82,6 @@ def _build_targets(model_id: str) -> list[DownloadTarget]:
             )
         ]
     # model-block:end:vibevoice-7b
-    # model-block:start:moss-ttsd-v1.0
-    if model_id == "moss-ttsd-v1.0":
-        return [
-            DownloadTarget(
-                repo_id="openmoss/MOSS-TTSD-v1.0",
-                local_dir_name="MOSS-TTSD-v1.0",
-            ),
-            DownloadTarget(
-                repo_id="openmoss/MOSS-Audio-Tokenizer",
-                local_dir_name="MOSS-Audio-Tokenizer",
-            ),
-        ]
-    # model-block:end:moss-ttsd-v1.0
     # model-block:start:cosyvoice3-0.5b
     if model_id == "cosyvoice3-0.5b":
         return [

@@ -20,6 +20,11 @@ class TestSettingsEnv(unittest.TestCase):
 
     def test_model_id_prefers_model_id_env(self) -> None:
         os.environ["MODEL"] = "7b"
+        os.environ["MODEL_ID"] = "cosyvoice3-0.5b"
+        settings = Settings.load()
+        self.assertEqual("cosyvoice3-0.5b", settings.model_id)
+
+    def test_removed_moss_model_id_falls_back_to_default(self) -> None:
         os.environ["MODEL_ID"] = "moss-ttsd-v1.0"
         settings = Settings.load()
-        self.assertEqual("moss-ttsd-v1.0", settings.model_id)
+        self.assertEqual("vibevoice-1.5b", settings.model_id)

@@ -6,7 +6,6 @@ on:
     paths:
       - "Dockerfile"
       - "Dockerfile.7b"
-      - "Dockerfile.moss"
       - "Dockerfile.cosy"
       - "Dockerfile.base"
       - "Dockerfile.app"
@@ -49,19 +48,16 @@ jobs:
           declare -A MODEL_TAG_BY_ID=(
             ["vibevoice-1.5b"]="1.5b"
             ["vibevoice-7b"]="7b"
-            ["moss-ttsd-v1.0"]="moss-ttsd-v1.0"
             ["cosyvoice3-0.5b"]="cosyvoice3-0.5b"
           )
           declare -A APP_TARGET_BY_ID=(
             ["vibevoice-1.5b"]="app-vibevoice"
             ["vibevoice-7b"]="app-vibevoice"
-            ["moss-ttsd-v1.0"]="app"
             ["cosyvoice3-0.5b"]="app"
           )
           MODEL_IDS=(
             "vibevoice-1.5b"
             "vibevoice-7b"
-            "moss-ttsd-v1.0"
             "cosyvoice3-0.5b"
           )
 
@@ -241,9 +237,6 @@ jobs:
                     ;;
                   Dockerfile.7b)
                     mark_selected "vibevoice-7b"
-                    ;;
-                  Dockerfile.moss)
-                    mark_selected "moss-ttsd-v1.0"
                     ;;
                   Dockerfile.cosy)
                     mark_selected "cosyvoice3-0.5b"

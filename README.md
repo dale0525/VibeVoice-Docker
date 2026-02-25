@@ -1,6 +1,6 @@
 # TTS-Docker
 
-将 VibeVoice / MOSS-TTSD / CosyVoice3 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
+将 VibeVoice / CosyVoice3 打包成可部署的 TTS 服务：OpenAI 兼容接口 + Web 页面 + 音色管理（内置示例音色 & 支持语音克隆）。
 
 ## 功能
 
@@ -16,15 +16,14 @@
 
 默认镜像地址：`ghcr.io/dale0525/tts-docker`（如你 fork 了，请替换为自己的 `<owner>`）。
 
-四个 tag（一个镜像固定一个模型）：
+三个 tag（一个镜像固定一个模型）：
 - `:1.5b`：1.5B（更省显存/更快）
 - `:7b`：7B（更慢/更吃显存）
-- `:moss-ttsd-v1.0`：MOSS-TTSD v1.0（长对话场景更强）
 - `:cosyvoice3-0.5b`：Fun-CosyVoice3 0.5B（跨语种/语音风格控制更强）
 
 为避免“应用代码没怎么变，但更新镜像要重新拉 10GB+ 模型层”，本仓库把镜像拆成两层：
-- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（尽量不频繁更新）
-- **app 镜像（服务代码）**：`ghcr.io/<owner>/tts-docker:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`（频繁更新）
+- **base 镜像（依赖 + 模型大层）**：`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|cosyvoice3-0.5b}`（尽量不频繁更新）
+- **app 镜像（服务代码）**：`ghcr.io/<owner>/tts-docker:{1.5b|7b|cosyvoice3-0.5b}`（频繁更新）
 
 本地部署只需要拉 app 镜像；base 层会作为共享 layer 自动复用（不需要手动拉 base）。
 
@@ -46,7 +45,6 @@ docker compose up -d
 
 ```bash
 MODEL=7b
-# MODEL=moss-ttsd-v1.0
 # MODEL=cosyvoice3-0.5b
 ```
 
@@ -82,7 +80,6 @@ docker compose up -d
 3. Branch 选 `main`，Dockerfile Path 选择模型：
    - 1.5B：`Dockerfile`
    - 7B：`Dockerfile.7b`
-   - MOSS-TTSD v1.0：`Dockerfile.moss`
    - CosyVoice3 0.5B：`Dockerfile.cosy`
 4. Endpoint Type 选 **Load Balancer**
 5. 建议环境变量：
@@ -163,7 +160,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `voice`：来自 `GET /v1/voices` 的 `id`
 - `input`：普通文本或单一说话人的 `Speaker N:` 脚本
 - `response_format`：`wav`（默认）或 `mp3`
-- `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（MOSS-TTSD / CosyVoice3 会忽略该参数）
+- `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（CosyVoice3 会忽略该参数）
 
 ## 文本输入规则（重要）
 
@@ -172,7 +169,6 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - 不支持多说话人：脚本里出现多个 `Speaker` 编号会返回 400
 - 默认对包含中文的文本做标点归一化，可用 `ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
 - 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `SCRIPT_LINE_MAX_CHARS` 配置
-- MOSS-TTSD 模式下会自动把单说话人脚本映射为 `[S1] ...`，并用音色的 `prompt_text`（若提供）增强克隆稳定性
 - CosyVoice3 模式下会自动把单说话人脚本还原为普通文本，并优先使用音色的 `prompt_text` 作为参考音频文本（未提供时自动回退为目标文本首句）
 
 ## 其他配置（可选）
@@ -203,12 +199,6 @@ pixi run dev
 pixi run dev-7b
 ```
 
-MOSS-TTSD：
-
-```bash
-pixi run dev-moss
-```
-
 CosyVoice3 0.5B：
 
 ```bash
@@ -225,14 +215,14 @@ pixi run up
 
 自动构建配置见 `.github/workflows/tts-docker.yml`：
 - Push 到 `main`：
-  - 只更新本次提交受影响的模型镜像（不会再无条件全量更新 4 个模型）
+  - 只更新本次提交受影响的模型镜像（不会再无条件全量更新 3 个模型）
   - 对于被选中的模型，会更新 `:<model_tag>`（始终指向最新）并额外生成 `:v0.0.<run_number>-<model_tag>`（便于固定部署版本）
   - 自动创建 GitHub Release：`v0.0.<run_number>`（Release 说明仅列出本次实际构建的模型镜像）
 - workflow_dispatch（手动触发）：
-  - 默认全量构建 4 个模型
+  - 默认全量构建 3 个模型
   - 可勾选 `rebuild_base=true` 强制重建 base 镜像
-- base 镜像（`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|moss-ttsd-v1.0|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新
-  - `Dockerfile.base` 仅改到 MOSS/Cosy 专属分支时，只重建对应模型的 base；改到公共区域时重建全部模型的 base
+- base 镜像（`ghcr.io/<owner>/tts-docker-base:{1.5b|7b|cosyvoice3-0.5b}`）仅在依赖/模型相关文件变更时更新
+  - `Dockerfile.base` 仅改到 Cosy 专属分支时，只重建 CosyVoice3 的 base；改到公共区域时重建全部模型的 base
 
 文件变更与模型更新对应关系（push 到 `main`）：
 
@@ -240,7 +230,6 @@ pixi run up
 | --- | --- |
 | `Dockerfile` | `1.5b` |
 | `Dockerfile.7b` | `7b` |
-| `Dockerfile.moss` | `moss-ttsd-v1.0` |
 | `Dockerfile.cosy` | `cosyvoice3-0.5b` |
-| `Dockerfile.base`（仅改到 MOSS/Cosy 专属分支） | 仅对应模型（`moss-ttsd-v1.0` 或 `cosyvoice3-0.5b`） |
-| `Dockerfile.base`（改到公共区域） / `Dockerfile.app` / `requirements.txt` / `app/**` / `scripts/**` / `VibeVoice/**` | 全部模型（`1.5b`、`7b`、`moss-ttsd-v1.0`、`cosyvoice3-0.5b`） |
+| `Dockerfile.base`（仅改到 Cosy 专属分支） | `cosyvoice3-0.5b` |
+| `Dockerfile.base`（改到公共区域） / `Dockerfile.app` / `requirements.txt` / `app/**` / `scripts/**` / `VibeVoice/**` | 全部模型（`1.5b`、`7b`、`cosyvoice3-0.5b`） |

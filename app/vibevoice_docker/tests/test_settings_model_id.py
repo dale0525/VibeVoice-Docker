@@ -8,10 +8,10 @@ class TestNormalizeModelId(unittest.TestCase):
         self.assertEqual("vibevoice-1.5b", _normalize_model_id("1.5b", "vibevoice-7b"))
         self.assertEqual("vibevoice-7b", _normalize_model_id("7b", "vibevoice-1.5b"))
 
-    def test_supports_moss_ttsd_aliases(self) -> None:
-        self.assertEqual("moss-ttsd-v1.0", _normalize_model_id("moss-ttsd-v1.0", "vibevoice-1.5b"))
-        self.assertEqual("moss-ttsd-v1.0", _normalize_model_id("moss_ttsd", "vibevoice-1.5b"))
-        self.assertEqual("moss-ttsd-v1.0", _normalize_model_id("moss", "vibevoice-1.5b"))
+    def test_moss_aliases_fall_back_to_default(self) -> None:
+        self.assertEqual("vibevoice-1.5b", _normalize_model_id("moss-ttsd-v1.0", "vibevoice-1.5b"))
+        self.assertEqual("vibevoice-1.5b", _normalize_model_id("moss_ttsd", "vibevoice-1.5b"))
+        self.assertEqual("vibevoice-1.5b", _normalize_model_id("moss", "vibevoice-1.5b"))
 
     def test_supports_cosyvoice3_aliases(self) -> None:
         self.assertEqual("cosyvoice3-0.5b", _normalize_model_id("cosyvoice3-0.5b", "vibevoice-1.5b"))
