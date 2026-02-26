@@ -89,6 +89,11 @@ COPY VibeVoice/pyproject.toml VibeVoice/README.md VibeVoice/LICENSE /opt/VibeVoi
 COPY VibeVoice/vibevoice /opt/VibeVoice/vibevoice
 COPY VibeVoice/demo/voices /opt/VibeVoice/demo/voices
 RUN pip install --no-cache-dir --no-deps -e /opt/VibeVoice
+COPY scripts/download_vibevoice_tokenizer.py /opt/scripts/download_vibevoice_tokenizer.py
+RUN HF_HOME=/models/hf-cache \
+    HUGGINGFACE_HUB_CACHE=/models/hf-cache/hub \
+    TRANSFORMERS_CACHE=/models/hf-cache/transformers \
+    python /opt/scripts/download_vibevoice_tokenizer.py
 
 # 复制服务端代码
 COPY app /app
@@ -97,6 +102,12 @@ WORKDIR /app
 ENV DATA_DIR=/data
 ENV VOICES_DIR=/data/voices
 ENV BUILTIN_VOICES_DIR=/opt/VibeVoice/demo/voices
+ENV HF_HOME=/models/hf-cache
+ENV HUGGINGFACE_HUB_CACHE=/models/hf-cache/hub
+ENV TRANSFORMERS_CACHE=/models/hf-cache/transformers
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_HUB_DISABLE_TELEMETRY=1
 
 EXPOSE 8000 80
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1

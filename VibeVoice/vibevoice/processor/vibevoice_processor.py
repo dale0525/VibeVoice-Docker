@@ -93,16 +93,56 @@ class VibeVoiceProcessor:
         speech_tok_compress_ratio = config.get("speech_tok_compress_ratio", 3200)
         db_normalize = config.get("db_normalize", True)
         
-        # Load tokenizer - try from model path first, then fallback to Qwen        
-        language_model_pretrained_name = config.get("language_model_pretrained_name", None) or kwargs.pop("language_model_pretrained_name", "Qwen/Qwen2.5-1.5B")
-        logger.info(f"Loading tokenizer from {language_model_pretrained_name}")
-        if 'qwen' in language_model_pretrained_name.lower():
+        # Load tokenizer - prefer local model directory for offline-friendly startup.
+        language_model_pretrained_name = (
+            kwargs.pop("language_model_pretrained_name", None)
+            or config.get("language_model_pretrained_name", None)
+            or "Qwen/Qwen2.5-1.5B"
+        )
+        if "qwen" not in language_model_pretrained_name.lower():
+            raise ValueError(
+                f"Unsupported tokenizer type for {language_model_pretrained_name}. Supported types: Qwen, Llama, Gemma."
+            )
+
+        logger.info(f"Loading tokenizer (model={language_model_pretrained_name})")
+        tokenizer_kwargs = dict(kwargs)
+        explicit_local_files_only = tokenizer_kwargs.pop("local_files_only", None)
+
+        def _env_truthy(name: str) -> bool:
+            return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "y", "on"}
+
+        offline_requested = _env_truthy("HF_HUB_OFFLINE") or _env_truthy("TRANSFORMERS_OFFLINE")
+        remote_tokenizer_kwargs = dict(tokenizer_kwargs)
+        if explicit_local_files_only is not None:
+            remote_tokenizer_kwargs["local_files_only"] = explicit_local_files_only
+        elif offline_requested:
+            remote_tokenizer_kwargs["local_files_only"] = True
+
+        tokenizer_source = str(pretrained_model_name_or_path)
+        local_tokenizer_kwargs = dict(tokenizer_kwargs)
+        local_tokenizer_kwargs["local_files_only"] = True
+
+        if os.path.isdir(tokenizer_source):
+            try:
+                tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
+                    tokenizer_source,
+                    **local_tokenizer_kwargs,
+                )
+                logger.info(f"Loaded tokenizer from local model directory: {tokenizer_source}")
+            except Exception as local_err:
+                logger.warning(
+                    f"Could not load tokenizer from local path {tokenizer_source}: {local_err}. "
+                    f"Falling back to {language_model_pretrained_name}."
+                )
+                tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
+                    language_model_pretrained_name,
+                    **remote_tokenizer_kwargs,
+                )
+        else:
             tokenizer = VibeVoiceTextTokenizerFast.from_pretrained(
                 language_model_pretrained_name,
-                **kwargs
+                **remote_tokenizer_kwargs,
             )
-        else:
-            raise ValueError(f"Unsupported tokenizer type for {language_model_pretrained_name}. Supported types: Qwen, Llama, Gemma.")
         
         # Load audio processor
         if "audio_processor" in config:

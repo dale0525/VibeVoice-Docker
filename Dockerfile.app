@@ -9,6 +9,12 @@ COPY app /app
 ENV DATA_DIR=/data
 ENV VOICES_DIR=/data/voices
 ENV BUILTIN_VOICES_DIR=/data/voices_builtin
+ENV HF_HOME=/models/hf-cache
+ENV HUGGINGFACE_HUB_CACHE=/models/hf-cache/hub
+ENV TRANSFORMERS_CACHE=/models/hf-cache/transformers
+ENV HF_HUB_OFFLINE=1
+ENV TRANSFORMERS_OFFLINE=1
+ENV HF_HUB_DISABLE_TELEMETRY=1
 
 EXPOSE 8000 80
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
