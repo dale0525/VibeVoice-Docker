@@ -100,6 +100,31 @@ RUN set -eux; \
         ;; \
     esac
 
+# VibeVoice 文本 tokenizer 依赖 HuggingFace 缓存；在构建期预拉取，保证运行期离线模式可启动。
+COPY scripts/download_vibevoice_tokenizer.py /opt/scripts/download_vibevoice_tokenizer.py
+RUN set -eux; \
+    case "${MODEL_ID}" in \
+      # model-block:start:vibevoice-1.5b
+      "vibevoice-1.5b") \
+        HF_HOME=/models/hf-cache \
+        HUGGINGFACE_HUB_CACHE=/models/hf-cache/hub \
+        TRANSFORMERS_CACHE=/models/hf-cache/transformers \
+        python /opt/scripts/download_vibevoice_tokenizer.py; \
+        ;; \
+      # model-block:end:vibevoice-1.5b
+      # model-block:start:vibevoice-7b
+      "vibevoice-7b") \
+        HF_HOME=/models/hf-cache \
+        HUGGINGFACE_HUB_CACHE=/models/hf-cache/hub \
+        TRANSFORMERS_CACHE=/models/hf-cache/transformers \
+        python /opt/scripts/download_vibevoice_tokenizer.py; \
+        ;; \
+      # model-block:end:vibevoice-7b
+      *) \
+        true; \
+        ;; \
+    esac
+
 RUN set -eux; \
     case "${MODEL_ID}" in \
       # model-block:start:cosyvoice3-0.5b

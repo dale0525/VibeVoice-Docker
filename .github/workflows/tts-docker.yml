@@ -228,6 +228,10 @@ jobs:
                   scripts/download_models.py)
                     mark_base_from_marked_file "scripts/download_models.py"
                     ;;
+                  scripts/download_vibevoice_tokenizer.py)
+                    mark_base "vibevoice-1.5b"
+                    mark_base "vibevoice-7b"
+                    ;;
                   scripts/*)
                     # 其他脚本改动保守处理为 app 全量
                     mark_all_selected
