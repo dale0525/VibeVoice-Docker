@@ -96,9 +96,13 @@ docker compose up -d
 ## 使用（Web UI）
 
 打开 `http://<host>:8000/`：
-- 选择音色（内置示例音色 / 你上传的自定义音色）
-- 输入文本并生成音频（支持 wav/mp3 下载）
-- 若在音色中选择“参考音频”，可先上传参考音频+prompt 文本进行试听，满意后再保存为新音色
+- 选择默认音色（未写 `[voice_id]` 时使用）
+- 输入模式支持双模式（默认“可视化编排”）：
+  - 可视化编排：按段选择音色 + 文本，前端自动序列化为 `[voice_id]...` 脚本
+  - 可视化编排支持按段切换“音色库/参考音频”；参考音频段会在生成前自动创建临时音色，生成后自动清理
+  - 脚本模式：直接输入 `[voice_id]` / `Speaker N:` / 普通文本
+- 生成音频（支持 wav/mp3 下载）
+- “参考音频”模式仅在“脚本模式”可用（用于单说话人试听与保存音色）
 - 在“音色管理”里可对已保存音色进行：试听参考音频、编辑参考文本（仅自定义音色）、删除（仅自定义音色）
   - 参考文本支持失焦自动保存（也可点击“保存参考文本”手动保存）
 
@@ -158,18 +162,22 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 
 参数提示：
 - `voice`：来自 `GET /v1/voices` 的 `id`
-- `input`：普通文本或单一说话人的 `Speaker N:` 脚本
+- `input`：普通文本 / `Speaker N:` 脚本 / `[voice_id]` 多说话人脚本
 - `response_format`：`wav`（默认）或 `mp3`
 - `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（CosyVoice3 会忽略该参数）
 
 ## 文本输入规则（重要）
 
 - 普通文本会自动包装成 `Speaker 0: ...`
-- 支持单一说话人脚本：`Speaker 0:` / `Speaker0:`（大小写不敏感）
-- 不支持多说话人：脚本里出现多个 `Speaker` 编号会返回 400
+- 支持 `Speaker 0:` / `Speaker0:`（大小写不敏感），并支持多 Speaker 编号
+- 支持多说话人音色脚本（推荐）：
+  - `[voice_id_1]第一位说的话`
+  - `同一位说话人的续行（不写前缀）`
+  - `[voice_id_2]第二位说的话`
+- 当某行配置了 `[voice_id_x]` 时，该行及其续行使用该音色；未配置时回退到请求参数 `voice`
 - 默认对包含中文的文本做标点归一化，可用 `ENABLE_CN_PUNCT_NORMALIZE=false` 关闭
-- 若某一段文本（冒号后的内容）超过长度阈值，会在句号 `.` 处自动拆分成多行（同一 `Speaker N:` 前缀；若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `SCRIPT_LINE_MAX_CHARS` 配置
-- CosyVoice3 模式下会自动把单说话人脚本还原为普通文本，并优先使用音色的 `prompt_text` 作为参考音频文本（未提供时自动回退为目标文本首句）
+- 若某一段说话内容超过长度阈值，会在句号 `.` 处自动拆分（若窗口内没有 `.` 则回退为按长度硬切）；默认 150，可用 `SCRIPT_LINE_MAX_CHARS` 配置
+- CosyVoice3 模式下会把每个说话段还原为普通文本合成，并优先使用该段音色的 `prompt_text` 作为参考音频文本（未提供时自动回退为目标文本首句）
 
 ## 其他配置（可选）
 
@@ -179,7 +187,7 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `WARMUP_ON_PRELOAD=false`：关闭预热（启动更快）
 - `EXIT_ON_IDLE_SECONDS=30`：空闲自动退出（Serverless 常用）
 - `ENABLE_CN_PUNCT_NORMALIZE=false`：关闭中文标点归一化
-- `SCRIPT_LINE_MAX_CHARS=150`：单一 Speaker 脚本的单行最大字符数（超过则优先按句号 `.` 自动拆分为多行）
+- `SCRIPT_LINE_MAX_CHARS=150`：每个说话段的单行最大字符数（超过则优先按句号 `.` 自动拆分）
 
 目录（一般不需要改）：
 - `DATA_DIR`：默认 `/data`

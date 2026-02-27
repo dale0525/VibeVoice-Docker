@@ -1,4 +1,11 @@
 const REFERENCE_VOICE_ID = "__reference_audio__";
+const INPUT_MODE_VISUAL = "visual";
+const INPUT_MODE_SCRIPT = "script";
+const INPUT_MODE_STORAGE_KEY = "vibevoice_input_mode";
+const SCRIPT_LINE_HINT_MAX = 150;
+
+const VOICE_TAG_LINE_RE = /^\s*\[([^\[\]\r\n]+)\]\s*(.*)$/;
+const SPEAKER_LINE_RE = /^\s*speaker\s*\d+\s*:\s*(.*)$/i;
 
 const statusEl = document.getElementById("status");
 const apiKeyEl = document.getElementById("apiKey");
@@ -8,6 +15,18 @@ const voiceSelect = document.getElementById("voiceSelect");
 const formatSelect = document.getElementById("formatSelect");
 const textInput = document.getElementById("textInput");
 const generateBtn = document.getElementById("generate");
+
+const modeVisualBtn = document.getElementById("modeVisual");
+const modeScriptBtn = document.getElementById("modeScript");
+const visualModePanelEl = document.getElementById("visualModePanel");
+const scriptModePanelEl = document.getElementById("scriptModePanel");
+const segmentEditorEl = document.getElementById("segmentEditor");
+const addSegmentBtn = document.getElementById("addSegment");
+const clearSegmentsBtn = document.getElementById("clearSegments");
+const exportSegmentsToScriptBtn = document.getElementById("exportSegmentsToScript");
+const segmentSummaryEl = document.getElementById("segmentSummary");
+const insertScriptTemplateBtn = document.getElementById("insertScriptTemplate");
+const scriptParseSummaryEl = document.getElementById("scriptParseSummary");
 
 const referenceInputsEl = document.getElementById("referenceInputs");
 const referenceVoiceFileEl = document.getElementById("referenceVoiceFile");
@@ -35,12 +54,29 @@ let currentVoiceSampleUrl = null;
 let currentModelId = "";
 let lastReferenceGenerationKey = "";
 let voicesById = {};
+let voiceList = [];
 let managePromptSaving = false;
+let inputMode = INPUT_MODE_VISUAL;
+let visualSegments = [];
 
 function setStatus(msg, isError = false) {
   statusEl.textContent = msg || "";
   statusEl.classList.toggle("muted", !isError);
   statusEl.style.color = isError ? "#ff8b97" : "";
+}
+
+function setScriptSummary(msg, isError = false) {
+  if (!scriptParseSummaryEl) return;
+  scriptParseSummaryEl.textContent = msg || "";
+  scriptParseSummaryEl.classList.toggle("muted", !isError);
+  scriptParseSummaryEl.style.color = isError ? "#ff8b97" : "";
+}
+
+function setSegmentSummary(msg, isWarn = false) {
+  if (!segmentSummaryEl) return;
+  segmentSummaryEl.textContent = msg || "";
+  segmentSummaryEl.classList.toggle("muted", !isWarn);
+  segmentSummaryEl.style.color = isWarn ? "#ffb36b" : "";
 }
 
 function getAuthHeaders() {
@@ -56,6 +92,22 @@ function bindClick(el, handler) {
 
 function isReferenceMode() {
   return voiceSelect.value === REFERENCE_VOICE_ID;
+}
+
+function getRegularVoiceIds() {
+  return voiceList.map((v) => v.id);
+}
+
+function getFirstRegularVoiceId() {
+  return voiceList.length > 0 ? voiceList[0].id : "";
+}
+
+function normalizeInputMode(mode) {
+  return mode === INPUT_MODE_SCRIPT ? INPUT_MODE_SCRIPT : INPUT_MODE_VISUAL;
+}
+
+function persistInputMode() {
+  localStorage.setItem(INPUT_MODE_STORAGE_KEY, inputMode);
 }
 
 function getReferenceFile() {
@@ -92,7 +144,12 @@ function revokeAudioUrls() {
 function updateSaveReferenceState() {
   const hasVoiceName = !!voiceNameEl.value.trim();
   const currentRefKey = getReferenceGenerationKey();
-  const canSave = isReferenceMode() && hasVoiceName && currentRefKey && currentRefKey === lastReferenceGenerationKey;
+  const canSave =
+    inputMode === INPUT_MODE_SCRIPT &&
+    isReferenceMode() &&
+    hasVoiceName &&
+    currentRefKey &&
+    currentRefKey === lastReferenceGenerationKey;
   saveReferenceVoiceBtn.disabled = !canSave;
 }
 
@@ -102,13 +159,29 @@ function resetReferenceGenerationState() {
 }
 
 function updateReferenceModeUI() {
-  const enabled = isReferenceMode();
+  const inScriptMode = inputMode === INPUT_MODE_SCRIPT;
+  const referenceOption = Array.from(voiceSelect.options).find((option) => option.value === REFERENCE_VOICE_ID);
+  if (referenceOption) {
+    referenceOption.disabled = !inScriptMode;
+  }
+
+  if (inputMode === INPUT_MODE_VISUAL && isReferenceMode()) {
+    const fallbackVoiceId = getFirstRegularVoiceId();
+    if (fallbackVoiceId) {
+      voiceSelect.value = fallbackVoiceId;
+      setStatus("可视化编排不支持参考音频模式，已切回普通音色");
+    }
+  }
+
+  const enabled = inScriptMode && isReferenceMode();
   referenceInputsEl.style.display = enabled ? "grid" : "none";
   if (!enabled) {
     resetReferenceGenerationState();
   } else {
     updateSaveReferenceState();
   }
+
+  updateScriptParseSummary();
 }
 
 function updateManageVoiceUI() {
@@ -162,9 +235,9 @@ async function refreshLists(preferredVoiceId = "", preferredManageVoiceId = "") 
     modelDisplay.value = currentModelId || "(unknown)";
 
     const voicesResp = await fetchJson("/v1/voices");
-    const voices = voicesResp.data || [];
+    voiceList = voicesResp.data || [];
     voicesById = {};
-    for (const v of voices) {
+    for (const v of voiceList) {
       voicesById[v.id] = v;
     }
 
@@ -174,7 +247,7 @@ async function refreshLists(preferredVoiceId = "", preferredManageVoiceId = "") 
     refOpt.value = REFERENCE_VOICE_ID;
     refOpt.textContent = "参考音频（先试听，满意后保存）";
     voiceSelect.appendChild(refOpt);
-    for (const v of voices) {
+    for (const v of voiceList) {
       const opt = document.createElement("option");
       opt.value = v.id;
       opt.textContent = `${v.name} (${v.type})`;
@@ -183,15 +256,15 @@ async function refreshLists(preferredVoiceId = "", preferredManageVoiceId = "") 
     const voiceValues = new Set(Array.from(voiceSelect.options).map((x) => x.value));
     if (prevVoiceId && voiceValues.has(prevVoiceId)) {
       voiceSelect.value = prevVoiceId;
-    } else if (voices.length > 0) {
-      voiceSelect.value = voices[0].id;
+    } else if (voiceList.length > 0) {
+      voiceSelect.value = voiceList[0].id;
     } else {
       voiceSelect.value = REFERENCE_VOICE_ID;
     }
 
     const prevManageVoiceId = preferredManageVoiceId || manageVoiceSelect.value;
     manageVoiceSelect.innerHTML = "";
-    for (const v of voices) {
+    for (const v of voiceList) {
       const opt = document.createElement("option");
       opt.value = v.id;
       opt.textContent = `${v.name} (${v.type})`;
@@ -200,12 +273,14 @@ async function refreshLists(preferredVoiceId = "", preferredManageVoiceId = "") 
     const manageValues = new Set(Array.from(manageVoiceSelect.options).map((x) => x.value));
     if (prevManageVoiceId && manageValues.has(prevManageVoiceId)) {
       manageVoiceSelect.value = prevManageVoiceId;
-    } else if (voices.length > 0) {
-      manageVoiceSelect.value = voices[0].id;
+    } else if (voiceList.length > 0) {
+      manageVoiceSelect.value = voiceList[0].id;
     }
 
-    updateReferenceModeUI();
+    reconcileVisualSegmentsWithVoices();
+    updateInputModeUI();
     updateManageVoiceUI();
+    updateScriptParseSummary();
     setStatus("刷新完成");
   } catch (e) {
     setStatus(String(e), true);
@@ -234,19 +309,182 @@ bindClick(clearApiKeyBtn, () => {
   setStatus("API Key 已清除");
 });
 
+function getVisualNonEmptySegments() {
+  const out = [];
+  for (let i = 0; i < visualSegments.length; i += 1) {
+    const segment = visualSegments[i];
+    if ((segment.text || "").trim()) {
+      out.push({ index: i, segment });
+    }
+  }
+  return out;
+}
+
+function buildSegmentReferenceSignature(segment) {
+  if (!segment || !segment.referenceFile) {
+    return "";
+  }
+  const file = segment.referenceFile;
+  const prompt = (segment.referencePromptText || "").trim();
+  return `${file.name}|${file.size}|${file.lastModified}|${prompt}`;
+}
+
+async function createTemporaryVoiceFromSegment(segment, tempIndex) {
+  const file = segment.referenceFile;
+  if (!file) {
+    throw new Error("参考音频文件缺失");
+  }
+
+  const name = `tmp-ref-${Date.now()}-${tempIndex}`;
+  const form = new FormData();
+  form.append("name", name);
+  form.append("file", file, file.name);
+  const promptText = (segment.referencePromptText || "").trim();
+  if (promptText) {
+    form.append("prompt_text", promptText);
+  }
+
+  const res = await fetch("/v1/voices", {
+    method: "POST",
+    headers: {
+      ...getAuthHeaders(),
+    },
+    body: form,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`${res.status} ${res.statusText}: ${text}`);
+  }
+  return await res.json();
+}
+
+async function cleanupTemporaryVoices(voiceIds) {
+  const uniqueIds = Array.from(new Set((voiceIds || []).filter(Boolean)));
+  if (!uniqueIds.length) {
+    return;
+  }
+
+  const tasks = uniqueIds.map(async (voiceId) => {
+    try {
+      await fetch(`/v1/voices/${encodeURIComponent(voiceId)}`, {
+        method: "DELETE",
+        headers: {
+          ...getAuthHeaders(),
+        },
+      });
+    } catch {
+      // best effort cleanup
+    }
+  });
+  await Promise.allSettled(tasks);
+}
+
+async function prepareVisualInputWithTemporaryVoices() {
+  const active = getVisualNonEmptySegments();
+  if (!active.length) {
+    throw new Error("请至少填写一个说话段内容");
+  }
+
+  const resolvedVoiceByIndex = new Map();
+  const signatureToVoiceId = new Map();
+  const tempVoiceIds = [];
+  let tempCounter = 0;
+
+  for (const item of active) {
+    const { index, segment } = item;
+    const sourceType = segment.sourceType === "reference" ? "reference" : "voice";
+
+    if (sourceType === "voice") {
+      const voiceId = (segment.voiceId || "").trim();
+      if (!voiceId || !isKnownVoiceId(voiceId)) {
+        throw new Error(`第 ${index + 1} 段的音色无效，请重新选择`);
+      }
+      resolvedVoiceByIndex.set(index, voiceId);
+      continue;
+    }
+
+    if (!segment.referenceFile) {
+      throw new Error(`第 ${index + 1} 段缺少参考音频文件`);
+    }
+
+    const signature = buildSegmentReferenceSignature(segment);
+    if (!signature) {
+      throw new Error(`第 ${index + 1} 段参考音频参数无效`);
+    }
+
+    let tempVoiceId = signatureToVoiceId.get(signature);
+    if (!tempVoiceId) {
+      tempCounter += 1;
+      const created = await createTemporaryVoiceFromSegment(segment, tempCounter);
+      tempVoiceId = (created && created.id) || "";
+      if (!tempVoiceId) {
+        throw new Error(`第 ${index + 1} 段创建临时音色失败`);
+      }
+      signatureToVoiceId.set(signature, tempVoiceId);
+      tempVoiceIds.push(tempVoiceId);
+    }
+    resolvedVoiceByIndex.set(index, tempVoiceId);
+  }
+
+  const input = serializeSegmentsToScript({
+    includeEmpty: false,
+    voiceIdResolver: (_, index) => resolvedVoiceByIndex.get(index) || "",
+  });
+
+  if (!input.trim()) {
+    throw new Error("没有可生成的有效内容");
+  }
+
+  return {
+    input,
+    tempVoiceIds,
+    tempVoiceCount: tempVoiceIds.length,
+  };
+}
+
 async function generateSpeech() {
   const voice = voiceSelect.value;
   const response_format = formatSelect.value;
-  const input = textInput.value;
+  let input = "";
+  let tempVoiceIds = [];
 
-  if (!input.trim()) {
-    setStatus("请输入文本", true);
-    return;
-  }
   if (!voice) {
-    setStatus("请选择音色", true);
+    setStatus("请选择默认音色", true);
     return;
   }
+
+  if (inputMode === INPUT_MODE_VISUAL) {
+    if (isReferenceMode()) {
+      setStatus("可视化编排不支持参考音频模式", true);
+      return;
+    }
+    try {
+      setStatus("正在准备可视化脚本...");
+      const prepared = await prepareVisualInputWithTemporaryVoices();
+      input = prepared.input;
+      tempVoiceIds = prepared.tempVoiceIds;
+      if (prepared.tempVoiceCount > 0) {
+        setStatus(`已创建 ${prepared.tempVoiceCount} 个临时参考音色，开始生成...`);
+      }
+    } catch (e) {
+      setStatus(String(e), true);
+      if (tempVoiceIds.length) {
+        await cleanupTemporaryVoices(tempVoiceIds);
+      }
+      return;
+    }
+  } else {
+    input = textInput.value;
+  }
+
+  if (inputMode === INPUT_MODE_SCRIPT) {
+    const analysis = analyzeScriptInput(input, voice);
+    if (!analysis.ok) {
+      setStatus(formatAnalysisError(analysis), true);
+      return;
+    }
+  }
+
   if (isReferenceMode() && !getReferenceFile()) {
     setStatus("参考音频模式下，请先上传参考音频", true);
     return;
@@ -341,6 +579,10 @@ async function generateSpeech() {
   } catch (e) {
     setStatus(String(e), true);
   } finally {
+    if (tempVoiceIds.length) {
+      await cleanupTemporaryVoices(tempVoiceIds);
+      await refreshLists(voiceSelect.value, manageVoiceSelect.value);
+    }
     if (timer) clearInterval(timer);
     generateBtn.disabled = false;
     generateBtn.textContent = originalGenerateBtnText;
@@ -350,8 +592,8 @@ async function generateSpeech() {
 generateBtn.addEventListener("click", generateSpeech);
 
 async function saveReferenceVoice() {
-  if (!isReferenceMode()) {
-    setStatus('请先在音色里选择“参考音频”', true);
+  if (inputMode !== INPUT_MODE_SCRIPT || !isReferenceMode()) {
+    setStatus('请先切换到“脚本模式”，并在音色里选择“参考音频”', true);
     return;
   }
 
@@ -549,7 +791,14 @@ async function deleteManagedVoice() {
 
 deleteVoiceBtn.addEventListener("click", deleteManagedVoice);
 
-voiceSelect.addEventListener("change", updateReferenceModeUI);
+voiceSelect.addEventListener("change", () => {
+  updateReferenceModeUI();
+  reconcileVisualSegmentsWithVoices();
+  if (inputMode === INPUT_MODE_VISUAL) {
+    renderSegmentEditor();
+  }
+  updateScriptParseSummary();
+});
 voiceNameEl.addEventListener("input", updateSaveReferenceState);
 referenceVoiceFileEl.addEventListener("change", resetReferenceGenerationState);
 referenceVoicePromptTextEl.addEventListener("input", resetReferenceGenerationState);
@@ -558,10 +807,35 @@ manageVoicePromptTextEl.addEventListener("blur", () => {
   saveManagedVoicePromptText({ silent: true, skipIfUnchanged: true });
 });
 
+if (textInput) {
+  textInput.addEventListener("input", () => {
+    updateScriptParseSummary();
+    resetReferenceGenerationState();
+  });
+}
+
+if (segmentEditorEl) {
+  segmentEditorEl.addEventListener("input", handleSegmentEditorInput);
+  segmentEditorEl.addEventListener("change", handleSegmentEditorChange);
+  segmentEditorEl.addEventListener("click", handleSegmentEditorClick);
+}
+
+bindClick(modeVisualBtn, switchToVisualMode);
+bindClick(modeScriptBtn, () => switchToScriptMode({ syncFromVisual: true }));
+bindClick(addSegmentBtn, addSegment);
+bindClick(clearSegmentsBtn, clearSegments);
+bindClick(exportSegmentsToScriptBtn, exportSegmentsToScript);
+bindClick(insertScriptTemplateBtn, insertScriptTemplate);
+
 function init() {
   const savedKey = localStorage.getItem("vibevoice_api_key") || "";
   apiKeyEl.value = savedKey;
+
+  inputMode = normalizeInputMode(localStorage.getItem(INPUT_MODE_STORAGE_KEY));
+  visualSegments = [createEmptySegment()];
+
   saveReferenceVoiceBtn.disabled = true;
+  updateInputModeUI();
   refreshLists();
 }
 

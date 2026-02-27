@@ -37,7 +37,7 @@
             <input id="modelDisplay" type="text" readonly />
           </label>
           <label>
-            音色
+            默认音色（未写 [voice_id] 时使用）
             <select id="voiceSelect"></select>
           </label>
           <label>
@@ -48,10 +48,42 @@
             </select>
           </label>
         </div>
-        <label>
-          文本（中文会自动按 README Tips 归一化为英文逗号/句号）
-          <textarea id="textInput" rows="6" placeholder="输入要合成的文本..."></textarea>
-        </label>
+
+        <div class="mode-switch" role="tablist" aria-label="输入模式切换">
+          <button id="modeVisual" class="secondary mode-btn" type="button" role="tab" aria-selected="true">
+            可视化编排
+          </button>
+          <button id="modeScript" class="secondary mode-btn" type="button" role="tab" aria-selected="false">
+            脚本模式
+          </button>
+          <div id="modeTip" class="muted mode-tip">可视化模式会自动序列化为 [voice_id] 脚本</div>
+        </div>
+
+        <div id="visualModePanel" class="panel-block">
+          <div id="segmentEditor" class="segment-editor"></div>
+          <div class="row">
+            <button id="addSegment" class="secondary" type="button">新增一段</button>
+            <button id="clearSegments" class="secondary" type="button">清空</button>
+            <button id="exportSegmentsToScript" class="secondary" type="button">导出为脚本</button>
+          </div>
+          <div id="segmentSummary" class="status muted"></div>
+        </div>
+
+        <div id="scriptModePanel" class="panel-block" style="display: none">
+          <label>
+            脚本文本（支持 [voice_id] / Speaker N: / 普通文本）
+            <textarea
+              id="textInput"
+              rows="8"
+              placeholder="[voice_id_1]第一位说话人内容&#10;同一说话人续行&#10;[voice_id_2]第二位说话人内容"
+            ></textarea>
+          </label>
+          <div class="row">
+            <button id="insertScriptTemplate" class="secondary" type="button">插入模板</button>
+            <div id="scriptParseSummary" class="status muted"></div>
+          </div>
+        </div>
+
         <div id="referenceInputs" class="grid" style="display: none">
           <label>
             参考音频（wav/mp3/flac/m4a/ogg）
@@ -104,6 +136,7 @@
       </footer>
     </main>
 
+    <script src="/static/input_mode_helpers.js"></script>
     <script src="/static/app.js"></script>
   </body>
 </html>

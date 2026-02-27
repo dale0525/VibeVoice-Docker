@@ -19,7 +19,7 @@ from vibevoice_docker.audio_formats import AudioFormat, audio_to_wav_bytes, wav_
 from vibevoice_docker.cosyvoice_adapter import build_cosy_prompt_text, speaker_script_to_cosy_text
 from vibevoice_docker.model_manager import ModelId, ModelManager
 from vibevoice_docker.settings import Settings
-from vibevoice_docker.text_normalize import looks_like_speaker_script, normalize_single_speaker_script
+from vibevoice_docker.text_normalize import normalize_script_to_voice_segments
 from vibevoice_docker.voices import Voice, VoiceStore
 
 
@@ -122,7 +122,7 @@ def require_api_key(request: Request) -> None:
 class SpeechRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
     model: str | None = Field(None, description="兼容字段：会被忽略（镜像已固定模型）")
-    input: str = Field(..., description="Text to speak (plain text or single-speaker Speaker script)")
+    input: str = Field(..., description="Text to speak (plain text / Speaker script / [voice_id] script)")
     voice: str = Field(..., description="Voice id from /v1/voices")
     response_format: AudioFormat = Field("wav", description="wav | mp3")
     vibevoice_cfg_scale: float = Field(3.0, description="CFG scale (advanced)")
@@ -319,38 +319,62 @@ def _request_process_exit() -> None:
         os._exit(0)
 
 
-def _normalize_request_script(input_text: str) -> str:
+def _normalize_request_segments(input_text: str, *, default_voice_id: str) -> list[tuple[str, str]]:
     script = (input_text or "").strip()
     if not script:
         raise HTTPException(status_code=400, detail="input is required")
 
-    if not looks_like_speaker_script(script):
-        script = f"Speaker 0: {script}"
-
     try:
-        return normalize_single_speaker_script(
+        return normalize_script_to_voice_segments(
             script,
+            default_voice_id=default_voice_id,
             enable_cn_punct_normalize=settings.enable_cn_punct_normalize,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
 
+def _resolve_voice_segments(
+    segments: list[tuple[str, str]],
+    *,
+    default_voice: Voice | None,
+) -> list[tuple[Voice, str]]:
+    voice_cache: dict[str, Voice] = {}
+    if default_voice is not None:
+        voice_cache[default_voice.id] = default_voice
+
+    resolved: list[tuple[Voice, str]] = []
+    for voice_id, text in segments:
+        voice = voice_cache.get(voice_id)
+        if voice is None:
+            voice = voice_store.get_voice(voice_id)
+            if voice is None:
+                raise HTTPException(status_code=404, detail=f"Unknown voice: {voice_id}")
+            voice_cache[voice_id] = voice
+        resolved.append((voice, text))
+    return resolved
+
+
 async def _synthesize_with_voice(
     *,
     input_text: str,
-    voice: Voice,
+    default_voice_id: str,
     response_format: AudioFormat,
     cfg_scale: float,
+    default_voice: Voice | None = None,
 ) -> Response:
     model_id = settings.model_id
-    script = _normalize_request_script(input_text)
+    segments = _normalize_request_segments(input_text, default_voice_id=default_voice_id)
+    voice_segments = _resolve_voice_segments(segments, default_voice=default_voice)
+    used_voice_ids = sorted({voice.id for voice, _ in voice_segments})
 
     request_started_at = time.perf_counter()
     logger.info(
-        "TTS start model=%s voice=%s format=%s chars=%d",
+        "TTS start model=%s default_voice=%s voices=%s segments=%d format=%s chars=%d",
         model_id,
-        voice.id,
+        default_voice_id,
+        ",".join(used_voice_ids),
+        len(voice_segments),
         response_format,
         len(input_text or ""),
     )
@@ -363,10 +387,9 @@ async def _synthesize_with_voice(
 
         inference_started_at = time.perf_counter()
         audio, sample_rate = await asyncio.to_thread(
-            _run_inference,
+            _run_inference_segments,
             model_id,
-            script,
-            voice,
+            voice_segments,
             float(cfg_scale),
         )
         inference_ms = (time.perf_counter() - inference_started_at) * 1000
@@ -378,9 +401,9 @@ async def _synthesize_with_voice(
         total_ms = (time.perf_counter() - request_started_at) * 1000
         encode_ms = (time.perf_counter() - encode_started_at) * 1000
         logger.info(
-            "TTS done model=%s voice=%s sr=%s bytes=%d total=%.0fms (infer=%.0fms encode=%.0fms)",
+            "TTS done model=%s voices=%s sr=%s bytes=%d total=%.0fms (infer=%.0fms encode=%.0fms)",
             model_id,
-            voice.id,
+            ",".join(used_voice_ids),
             sample_rate,
             len(mp3_bytes),
             total_ms,
@@ -392,9 +415,9 @@ async def _synthesize_with_voice(
     total_ms = (time.perf_counter() - request_started_at) * 1000
     encode_ms = (time.perf_counter() - encode_started_at) * 1000
     logger.info(
-        "TTS done model=%s voice=%s sr=%s bytes=%d total=%.0fms (infer=%.0fms encode=%.0fms)",
+        "TTS done model=%s voices=%s sr=%s bytes=%d total=%.0fms (infer=%.0fms encode=%.0fms)",
         model_id,
-        voice.id,
+        ",".join(used_voice_ids),
         sample_rate,
         len(wav_bytes),
         total_ms,
@@ -406,13 +429,9 @@ async def _synthesize_with_voice(
 
 @app.post("/v1/audio/speech")
 async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_key)) -> Response:
-    voice = voice_store.get_voice(payload.voice)
-    if voice is None:
-        return _openai_error(f"Unknown voice: {payload.voice}", code="voice_not_found", status_code=404)
-
     return await _synthesize_with_voice(
         input_text=payload.input,
-        voice=voice,
+        default_voice_id=payload.voice,
         response_format=payload.response_format,
         cfg_scale=float(payload.vibevoice_cfg_scale),
     )
@@ -448,9 +467,10 @@ async def create_speech_with_reference(
     try:
         return await _synthesize_with_voice(
             input_text=input_text,
-            voice=reference_voice,
+            default_voice_id=reference_voice.id,
             response_format=response_format,
             cfg_scale=float(vibevoice_cfg_scale),
+            default_voice=reference_voice,
         )
     finally:
         try:
@@ -534,6 +554,37 @@ def _run_inference_cosyvoice3(loaded, script: str, voice: Voice):
         text_frontend=True,
     )
     return _decode_cosyvoice_audio(outputs), sample_rate
+
+
+def _run_inference_segments(model_id: ModelId, segments: list[tuple[Voice, str]], cfg_scale: float):
+    import numpy as np
+
+    if not segments:
+        raise RuntimeError("No valid segments to synthesize")
+
+    merged_audio: list[np.ndarray] = []
+    sample_rate: int | None = None
+
+    for voice, text in segments:
+        script = f"Speaker 0: {text}"
+        audio, segment_sample_rate = _run_inference(model_id, script=script, voice=voice, cfg_scale=cfg_scale)
+        audio_np = np.asarray(audio, dtype=np.float32).reshape(-1)
+        if audio_np.size > 0:
+            merged_audio.append(audio_np)
+
+        if sample_rate is None:
+            sample_rate = int(segment_sample_rate)
+        elif int(segment_sample_rate) != sample_rate:
+            raise RuntimeError(
+                f"Sample rate mismatch across segments: expected {sample_rate}, got {segment_sample_rate}"
+            )
+
+    if sample_rate is None or not merged_audio:
+        raise RuntimeError("No audio generated")
+
+    if len(merged_audio) == 1:
+        return merged_audio[0], sample_rate
+    return np.concatenate(merged_audio, axis=0), sample_rate
 
 
 def _run_inference(model_id: ModelId, script: str, voice: Voice, cfg_scale: float):
