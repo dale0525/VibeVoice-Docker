@@ -556,6 +556,19 @@ def _run_inference_cosyvoice3(loaded, script: str, voice: Voice):
     return _decode_cosyvoice_audio(outputs), sample_rate
 
 
+def _to_audio_numpy(audio):
+    import numpy as np
+
+    try:
+        import torch
+    except Exception:  # pragma: no cover - depends on runtime image
+        torch = None  # type: ignore
+
+    if torch is not None and isinstance(audio, torch.Tensor):
+        return audio.detach().to(dtype=torch.float32, device="cpu").reshape(-1).numpy()
+    return np.asarray(audio, dtype=np.float32).reshape(-1)
+
+
 def _run_inference_segments(model_id: ModelId, segments: list[tuple[Voice, str]], cfg_scale: float):
     import numpy as np
 
@@ -568,7 +581,7 @@ def _run_inference_segments(model_id: ModelId, segments: list[tuple[Voice, str]]
     for voice, text in segments:
         script = f"Speaker 0: {text}"
         audio, segment_sample_rate = _run_inference(model_id, script=script, voice=voice, cfg_scale=cfg_scale)
-        audio_np = np.asarray(audio, dtype=np.float32).reshape(-1)
+        audio_np = _to_audio_numpy(audio)
         if audio_np.size > 0:
             merged_audio.append(audio_np)
 
