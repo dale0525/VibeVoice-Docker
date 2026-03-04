@@ -126,6 +126,8 @@ class SpeechRequest(BaseModel):
     voice: str = Field(..., description="Voice id from /v1/voices")
     response_format: AudioFormat = Field("wav", description="wav | mp3")
     vibevoice_cfg_scale: float = Field(3.0, description="CFG scale (advanced)")
+    seed: int | None = Field(None, ge=0, description="Random seed (VibeVoice only)")
+    temperature: float | None = Field(None, ge=0.0, le=2.0, description="Sampling temperature (VibeVoice only)")
 
 
 class UpdateVoiceRequest(BaseModel):
@@ -361,22 +363,44 @@ async def _synthesize_with_voice(
     default_voice_id: str,
     response_format: AudioFormat,
     cfg_scale: float,
+    seed: int | None = None,
+    temperature: float | None = None,
     default_voice: Voice | None = None,
 ) -> Response:
     model_id = settings.model_id
+    effective_seed = seed
+    effective_temperature = temperature
+    if model_id == "cosyvoice3-0.5b":
+        unsupported: list[str] = []
+        if effective_seed is not None:
+            unsupported.append("seed")
+        if effective_temperature is not None:
+            unsupported.append("temperature")
+        if unsupported:
+            params = ", ".join(unsupported)
+            verb = "is" if len(unsupported) == 1 else "are"
+            raise HTTPException(status_code=400, detail=f"{params} {verb} not supported for cosyvoice3-0.5b")
+    else:
+        if effective_seed is None:
+            effective_seed = int(settings.vibevoice_default_seed)
+        if effective_temperature is None:
+            effective_temperature = float(settings.vibevoice_default_temperature)
+
     segments = _normalize_request_segments(input_text, default_voice_id=default_voice_id)
     voice_segments = _resolve_voice_segments(segments, default_voice=default_voice)
     used_voice_ids = sorted({voice.id for voice, _ in voice_segments})
 
     request_started_at = time.perf_counter()
     logger.info(
-        "TTS start model=%s default_voice=%s voices=%s segments=%d format=%s chars=%d",
+        "TTS start model=%s default_voice=%s voices=%s segments=%d format=%s chars=%d seed=%s temperature=%s",
         model_id,
         default_voice_id,
         ",".join(used_voice_ids),
         len(voice_segments),
         response_format,
         len(input_text or ""),
+        effective_seed if effective_seed is not None else "none",
+        effective_temperature if effective_temperature is not None else "none",
     )
 
     lock_wait_started_at = time.perf_counter()
@@ -391,6 +415,8 @@ async def _synthesize_with_voice(
             model_id,
             voice_segments,
             float(cfg_scale),
+            effective_seed,
+            effective_temperature,
         )
         inference_ms = (time.perf_counter() - inference_started_at) * 1000
 
@@ -434,6 +460,8 @@ async def create_speech(payload: SpeechRequest, _: None = Depends(require_api_ke
         default_voice_id=payload.voice,
         response_format=payload.response_format,
         cfg_scale=float(payload.vibevoice_cfg_scale),
+        seed=payload.seed,
+        temperature=payload.temperature,
     )
 
 
@@ -444,6 +472,8 @@ async def create_speech_with_reference(
     prompt_text: str | None = Form(None),
     response_format: AudioFormat = Form("wav"),
     vibevoice_cfg_scale: float = Form(3.0),
+    seed: int | None = Form(None, ge=0),
+    temperature: float | None = Form(None, ge=0.0, le=2.0),
     _: None = Depends(require_api_key),
 ) -> Response:
     upload_dir = settings.data_dir / "uploads"
@@ -470,6 +500,8 @@ async def create_speech_with_reference(
             default_voice_id=reference_voice.id,
             response_format=response_format,
             cfg_scale=float(vibevoice_cfg_scale),
+            seed=seed,
+            temperature=temperature,
             default_voice=reference_voice,
         )
     finally:
@@ -480,7 +512,14 @@ async def create_speech_with_reference(
             pass
 
 
-def _run_inference_vibevoice(loaded, script: str, voice: Voice, cfg_scale: float):
+def _run_inference_vibevoice(
+    loaded,
+    script: str,
+    voice: Voice,
+    cfg_scale: float,
+    seed: int | None = None,
+    temperature: float | None = None,
+):
     import torch
 
     processor = loaded.processor
@@ -498,12 +537,40 @@ def _run_inference_vibevoice(loaded, script: str, voice: Voice, cfg_scale: float
         if torch.is_tensor(v):
             inputs[k] = v.to(target_device)
 
+    generation_config: dict[str, Any] = {"do_sample": False}
+    if temperature is not None and float(temperature) > 0:
+        generation_config = {"do_sample": True, "temperature": float(temperature)}
+
+    generator = None
+    if seed is not None:
+        resolved_seed = int(seed)
+        if hasattr(torch, "manual_seed"):
+            torch.manual_seed(resolved_seed)
+        cuda = getattr(torch, "cuda", None)
+        if (
+            cuda is not None
+            and hasattr(cuda, "is_available")
+            and cuda.is_available()
+            and hasattr(cuda, "manual_seed_all")
+        ):
+            cuda.manual_seed_all(resolved_seed)
+        try:
+            if str(target_device).startswith("cuda"):
+                generator = torch.Generator(device=str(target_device))
+            else:
+                generator = torch.Generator()
+            generator.manual_seed(resolved_seed)
+        except Exception as exc:
+            logger.warning("Failed to create seeded generator (seed=%s, device=%s): %s", resolved_seed, target_device, exc)
+            generator = None
+
     outputs = model.generate(
         **inputs,
         max_new_tokens=None,
         cfg_scale=cfg_scale,
         tokenizer=processor.tokenizer,
-        generation_config={"do_sample": False},
+        generation_config=generation_config,
+        generator=generator,
         show_progress_bar=False,
         refresh_negative=True,
         verbose=False,
@@ -569,7 +636,13 @@ def _to_audio_numpy(audio):
     return np.asarray(audio, dtype=np.float32).reshape(-1)
 
 
-def _run_inference_segments(model_id: ModelId, segments: list[tuple[Voice, str]], cfg_scale: float):
+def _run_inference_segments(
+    model_id: ModelId,
+    segments: list[tuple[Voice, str]],
+    cfg_scale: float,
+    seed: int | None = None,
+    temperature: float | None = None,
+):
     import numpy as np
 
     if not segments:
@@ -580,7 +653,14 @@ def _run_inference_segments(model_id: ModelId, segments: list[tuple[Voice, str]]
 
     for voice, text in segments:
         script = f"Speaker 0: {text}"
-        audio, segment_sample_rate = _run_inference(model_id, script=script, voice=voice, cfg_scale=cfg_scale)
+        audio, segment_sample_rate = _run_inference(
+            model_id,
+            script=script,
+            voice=voice,
+            cfg_scale=cfg_scale,
+            seed=seed,
+            temperature=temperature,
+        )
         audio_np = _to_audio_numpy(audio)
         if audio_np.size > 0:
             merged_audio.append(audio_np)
@@ -600,11 +680,25 @@ def _run_inference_segments(model_id: ModelId, segments: list[tuple[Voice, str]]
     return np.concatenate(merged_audio, axis=0), sample_rate
 
 
-def _run_inference(model_id: ModelId, script: str, voice: Voice, cfg_scale: float):
+def _run_inference(
+    model_id: ModelId,
+    script: str,
+    voice: Voice,
+    cfg_scale: float,
+    seed: int | None = None,
+    temperature: float | None = None,
+):
     loaded = model_manager.get(model_id)
     if loaded.backend == "cosyvoice3":
         return _run_inference_cosyvoice3(loaded, script=script, voice=voice)
-    return _run_inference_vibevoice(loaded, script=script, voice=voice, cfg_scale=cfg_scale)
+    return _run_inference_vibevoice(
+        loaded,
+        script=script,
+        voice=voice,
+        cfg_scale=cfg_scale,
+        seed=seed,
+        temperature=temperature,
+    )
 
 
 @app.on_event("startup")

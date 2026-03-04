@@ -147,6 +147,8 @@ curl -X POST http://localhost:8000/v1/audio/speech/reference \
   -F "file=@sample.wav" \
   -F "input=你好，世界！" \
   -F "prompt_text=这是参考音频对应文本（可选）" \
+  -F "seed=42" \
+  -F "temperature=0.8" \
   -F "response_format=mp3" \
   --output out.mp3
 ```
@@ -156,7 +158,7 @@ curl -X POST http://localhost:8000/v1/audio/speech/reference \
 ```bash
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
-  -d "{\"voice\":\"zh-Xinran_woman\",\"input\":\"你好，世界！\",\"response_format\":\"mp3\"}" \
+  -d "{\"voice\":\"zh-Xinran_woman\",\"input\":\"你好，世界！\",\"response_format\":\"mp3\",\"seed\":42,\"temperature\":0.8}" \
   --output out.mp3
 ```
 
@@ -165,6 +167,9 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `input`：普通文本 / `Speaker N:` 脚本 / `[voice_id]` 多说话人脚本
 - `response_format`：`wav`（默认）或 `mp3`
 - `vibevoice_cfg_scale`：VibeVoice 高级参数，默认 3.0（CosyVoice3 会忽略该参数）
+- `seed`：随机种子（仅 VibeVoice 支持）；不传时使用后端默认值（默认 `42`）
+- `temperature`：采样温度，范围 `0~2`；`0` 表示确定性贪心（仅 VibeVoice 支持）；不传时使用后端默认值（默认 `0.0`）
+- `cosyvoice3-0.5b` 模型不支持 `seed/temperature`，传入会返回 `400`
 
 ## 文本输入规则（重要）
 
@@ -188,6 +193,8 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `EXIT_ON_IDLE_SECONDS=30`：空闲自动退出（Serverless 常用）
 - `ENABLE_CN_PUNCT_NORMALIZE=false`：关闭中文标点归一化
 - `SCRIPT_LINE_MAX_CHARS=150`：每个说话段的单行最大字符数（超过则优先按句号 `.` 自动拆分）
+- `VIBEVOICE_DEFAULT_SEED=42`：VibeVoice 默认随机种子（请求未传 `seed` 时生效）
+- `VIBEVOICE_DEFAULT_TEMPERATURE=0.0`：VibeVoice 默认采样温度（请求未传 `temperature` 时生效）
 
 目录（一般不需要改）：
 - `DATA_DIR`：默认 `/data`

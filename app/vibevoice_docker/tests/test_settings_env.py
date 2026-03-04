@@ -28,3 +28,17 @@ class TestSettingsEnv(unittest.TestCase):
         os.environ["MODEL_ID"] = "moss-ttsd-v1.0"
         settings = Settings.load()
         self.assertEqual("vibevoice-1.5b", settings.model_id)
+
+    def test_vibevoice_sampling_defaults_when_env_missing(self) -> None:
+        os.environ.pop("VIBEVOICE_DEFAULT_SEED", None)
+        os.environ.pop("VIBEVOICE_DEFAULT_TEMPERATURE", None)
+        settings = Settings.load()
+        self.assertEqual(42, settings.vibevoice_default_seed)
+        self.assertEqual(0.0, settings.vibevoice_default_temperature)
+
+    def test_vibevoice_sampling_defaults_can_be_overridden(self) -> None:
+        os.environ["VIBEVOICE_DEFAULT_SEED"] = "123"
+        os.environ["VIBEVOICE_DEFAULT_TEMPERATURE"] = "0.65"
+        settings = Settings.load()
+        self.assertEqual(123, settings.vibevoice_default_seed)
+        self.assertEqual(0.65, settings.vibevoice_default_temperature)

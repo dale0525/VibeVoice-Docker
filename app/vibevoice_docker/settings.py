@@ -20,6 +20,15 @@ def _env_int(value: str | None, default: int) -> int:
         return default
 
 
+def _env_float(value: str | None, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
 ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "cosyvoice3-0.5b"]
 
 
@@ -49,6 +58,8 @@ class Settings:
     preload_on_startup: bool
     warmup_on_preload: bool
     enable_cn_punct_normalize: bool
+    vibevoice_default_seed: int
+    vibevoice_default_temperature: float
     api_key: str | None
 
     @staticmethod
@@ -85,6 +96,9 @@ class Settings:
             os.environ.get("ENABLE_CN_PUNCT_NORMALIZE"),
             True,
         )
+        vibevoice_default_seed = max(0, _env_int(os.environ.get("VIBEVOICE_DEFAULT_SEED"), 42))
+        vibevoice_default_temperature = _env_float(os.environ.get("VIBEVOICE_DEFAULT_TEMPERATURE"), 0.0)
+        vibevoice_default_temperature = min(2.0, max(0.0, vibevoice_default_temperature))
         api_key = os.environ.get("API_KEY") or None
 
         return Settings(
@@ -99,5 +113,7 @@ class Settings:
             preload_on_startup=preload_on_startup,
             warmup_on_preload=warmup_on_preload,
             enable_cn_punct_normalize=enable_cn_punct_normalize,
+            vibevoice_default_seed=vibevoice_default_seed,
+            vibevoice_default_temperature=vibevoice_default_temperature,
             api_key=api_key,
         )

@@ -13,6 +13,8 @@ const apiKeyEl = document.getElementById("apiKey");
 const modelDisplay = document.getElementById("modelDisplay");
 const voiceSelect = document.getElementById("voiceSelect");
 const formatSelect = document.getElementById("formatSelect");
+const seedInput = document.getElementById("seedInput");
+const temperatureInput = document.getElementById("temperatureInput");
 const textInput = document.getElementById("textInput");
 const generateBtn = document.getElementById("generate");
 
@@ -100,6 +102,55 @@ function getRegularVoiceIds() {
 
 function getFirstRegularVoiceId() {
   return voiceList.length > 0 ? voiceList[0].id : "";
+}
+
+function modelSupportsSamplingControls() {
+  return (currentModelId || "").startsWith("vibevoice-");
+}
+
+function updateSamplingControlsUI() {
+  if (!seedInput || !temperatureInput) return;
+
+  const enabled = modelSupportsSamplingControls();
+  seedInput.disabled = !enabled;
+  temperatureInput.disabled = !enabled;
+  if (enabled) {
+    seedInput.placeholder = "例如 42";
+    temperatureInput.placeholder = "例如 0.0";
+  } else {
+    seedInput.placeholder = "当前模型不支持";
+    temperatureInput.placeholder = "当前模型不支持";
+  }
+}
+
+function parseOptionalSeed() {
+  if (!seedInput || !modelSupportsSamplingControls()) {
+    return { value: null, error: "" };
+  }
+  const raw = (seedInput.value || "").trim();
+  if (!raw) {
+    return { value: null, error: "" };
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) {
+    return { value: null, error: "Seed 必须是大于等于 0 的整数" };
+  }
+  return { value, error: "" };
+}
+
+function parseOptionalTemperature() {
+  if (!temperatureInput || !modelSupportsSamplingControls()) {
+    return { value: null, error: "" };
+  }
+  const raw = (temperatureInput.value || "").trim();
+  if (!raw) {
+    return { value: null, error: "" };
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 2) {
+    return { value: null, error: "Temperature 必须在 0 到 2 之间" };
+  }
+  return { value, error: "" };
 }
 
 function normalizeInputMode(mode) {
@@ -233,6 +284,7 @@ async function refreshLists(preferredVoiceId = "", preferredManageVoiceId = "") 
     const firstModel = (models.data || [])[0];
     currentModelId = (firstModel && firstModel.id) || "";
     modelDisplay.value = currentModelId || "(unknown)";
+    updateSamplingControlsUI();
 
     const voicesResp = await fetchJson("/v1/voices");
     voiceList = voicesResp.data || [];
@@ -445,6 +497,18 @@ async function prepareVisualInputWithTemporaryVoices() {
 async function generateSpeech() {
   const voice = voiceSelect.value;
   const response_format = formatSelect.value;
+  const seedParsed = parseOptionalSeed();
+  if (seedParsed.error) {
+    setStatus(seedParsed.error, true);
+    return;
+  }
+  const temperatureParsed = parseOptionalTemperature();
+  if (temperatureParsed.error) {
+    setStatus(temperatureParsed.error, true);
+    return;
+  }
+  const seed = seedParsed.value;
+  const temperature = temperatureParsed.value;
   let input = "";
   let tempVoiceIds = [];
 
@@ -526,6 +590,12 @@ async function generateSpeech() {
       if (refPromptText) {
         form.append("prompt_text", refPromptText);
       }
+      if (seed !== null) {
+        form.append("seed", String(seed));
+      }
+      if (temperature !== null) {
+        form.append("temperature", String(temperature));
+      }
       res = await fetch("/v1/audio/speech/reference", {
         method: "POST",
         headers: {
@@ -539,6 +609,12 @@ async function generateSpeech() {
         input,
         response_format,
       };
+      if (seed !== null) {
+        body.seed = seed;
+      }
+      if (temperature !== null) {
+        body.temperature = temperature;
+      }
       if (currentModelId) {
         body.model = currentModelId;
       }
@@ -835,6 +911,7 @@ function init() {
   visualSegments = [createEmptySegment()];
 
   saveReferenceVoiceBtn.disabled = true;
+  updateSamplingControlsUI();
   updateInputModeUI();
   refreshLists();
 }

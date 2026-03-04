@@ -47,6 +47,14 @@
               <option value="mp3">mp3</option>
             </select>
           </label>
+          <label>
+            Seed（留空用后端默认）
+            <input id="seedInput" type="number" min="0" step="1" placeholder="例如 42" />
+          </label>
+          <label>
+            Temperature（0~2，留空用后端默认）
+            <input id="temperatureInput" type="number" min="0" max="2" step="0.01" placeholder="例如 0.0" />
+          </label>
         </div>
 
         <div class="mode-switch" role="tablist" aria-label="输入模式切换">
