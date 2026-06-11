@@ -37,6 +37,9 @@ model_manager = ModelManager(
     models_dir=settings.models_dir,
     idle_unload_seconds=settings.idle_unload_seconds,
     max_loaded_models=settings.max_loaded_models,
+    inference_accelerator=settings.inference_accelerator,
+    cosyvoice3_load_trt=settings.cosyvoice3_load_trt,
+    cosyvoice3_load_vllm=settings.cosyvoice3_load_vllm,
 )
 
 app = FastAPI(title="TTS-Docker OpenAI-Compatible API", version="0.1.0")
@@ -145,25 +148,19 @@ def web_index() -> str:
 
 @app.get("/healthz")
 def healthz() -> dict[str, Any]:
+    capabilities = model_manager.runtime_capabilities()
     return {
         "status": "ok",
         "time": int(time.time()),
-        "cuda_available": _cuda_available(),
+        "cuda_available": capabilities.cuda_available,
+        "mps_available": capabilities.mps_available,
+        "inference_accelerator": capabilities.configured_accelerator,
     }
 
 
 @app.get("/ping")
 def ping() -> dict[str, str]:
     return {"status": "healthy"}
-
-
-def _cuda_available() -> bool:
-    try:
-        import torch
-
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
 
 
 @app.get("/v1/models")

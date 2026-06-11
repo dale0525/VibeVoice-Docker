@@ -1,0 +1,14 @@
+services:
+  tts:
+    platform: linux/arm64
+    image: ${TTS_IMAGE_REPO:-ghcr.io/dale0525/tts-docker}:${TTS_IMAGE_TAG:-cosyvoice3-0.5b-colima}
+    build:
+      context: .
+      dockerfile: Dockerfile.cosy
+      args:
+        BASE_IMAGE: ${TTS_BASE_IMAGE:-python:3.11-slim-bookworm}
+        INSTALL_TORCH_CPU: "1"
+        MODEL_ID: cosyvoice3-0.5b
+    environment:
+      MODEL: cosyvoice3-0.5b
+      TTS_ACCELERATOR: ${TTS_ACCELERATOR:-cpu}

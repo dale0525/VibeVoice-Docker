@@ -30,6 +30,7 @@ def _env_float(value: str | None, default: float) -> float:
 
 
 ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "cosyvoice3-0.5b"]
+InferenceAccelerator = Literal["auto", "cpu", "cuda", "mps"]
 
 
 def _normalize_model_id(value: str | None, default: ModelId) -> ModelId:
@@ -42,6 +43,21 @@ def _normalize_model_id(value: str | None, default: ModelId) -> ModelId:
         return "vibevoice-7b"
     if v in {"cosyvoice3-0.5b", "cosyvoice3", "cosy3", "fun-cosyvoice3-0.5b"}:
         return "cosyvoice3-0.5b"
+    return default
+
+
+def _normalize_accelerator(value: str | None, default: InferenceAccelerator) -> InferenceAccelerator:
+    if value is None:
+        return default
+    v = value.strip().lower()
+    if v in {"", "auto", "default"}:
+        return "auto"
+    if v in {"cpu", "none", "off", "false", "0"}:
+        return "cpu"
+    if v in {"cuda", "gpu", "nvidia"}:
+        return "cuda"
+    if v in {"mps", "metal", "apple", "apple-silicon", "apple_silicon"}:
+        return "mps"
     return default
 
 
@@ -60,6 +76,9 @@ class Settings:
     enable_cn_punct_normalize: bool
     vibevoice_default_seed: int
     vibevoice_default_temperature: float
+    inference_accelerator: InferenceAccelerator
+    cosyvoice3_load_trt: bool
+    cosyvoice3_load_vllm: bool
     api_key: str | None
 
     @staticmethod
@@ -99,6 +118,12 @@ class Settings:
         vibevoice_default_seed = max(0, _env_int(os.environ.get("VIBEVOICE_DEFAULT_SEED"), 42))
         vibevoice_default_temperature = _env_float(os.environ.get("VIBEVOICE_DEFAULT_TEMPERATURE"), 0.0)
         vibevoice_default_temperature = min(2.0, max(0.0, vibevoice_default_temperature))
+        inference_accelerator = _normalize_accelerator(
+            os.environ.get("TTS_ACCELERATOR") or os.environ.get("INFERENCE_ACCELERATOR"),
+            "auto",
+        )
+        cosyvoice3_load_trt = _env_bool(os.environ.get("COSYVOICE3_LOAD_TRT"), False)
+        cosyvoice3_load_vllm = _env_bool(os.environ.get("COSYVOICE3_LOAD_VLLM"), False)
         api_key = os.environ.get("API_KEY") or None
 
         return Settings(
@@ -115,5 +140,8 @@ class Settings:
             enable_cn_punct_normalize=enable_cn_punct_normalize,
             vibevoice_default_seed=vibevoice_default_seed,
             vibevoice_default_temperature=vibevoice_default_temperature,
+            inference_accelerator=inference_accelerator,
+            cosyvoice3_load_trt=cosyvoice3_load_trt,
+            cosyvoice3_load_vllm=cosyvoice3_load_vllm,
             api_key=api_key,
         )

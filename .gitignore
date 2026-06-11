@@ -13,6 +13,7 @@ __pycache__/
 .pixi/
 .pixi-cache/
 .buildx-cache/
+.tool/
 
 # local runtime data
 data/

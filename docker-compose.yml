@@ -2,23 +2,17 @@ name: tts-docker
 
 services:
   tts:
-    image: ${TTS_IMAGE_REPO:-ghcr.io/dale0525/tts-docker}:${MODEL:-1.5b}
+    image: ${TTS_IMAGE_REPO:-ghcr.io/dale0525/tts-docker}:${TTS_IMAGE_TAG:-${MODEL:-1.5b}}
     container_name: tts
     ports:
       - "8000:8000"
     volumes:
       - ./data:/data
     environment:
-      - MODEL=${MODEL:-1.5b}
-      - PRELOAD_MODEL=1
-      - WARMUP_ON_PRELOAD=true
-      - IDLE_UNLOAD_SECONDS=900
-      - MAX_LOADED_MODELS=1
-      - SCRIPT_LINE_MAX_CHARS=150
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: ["0"]
-              capabilities: [gpu]
+      MODEL: ${MODEL:-1.5b}
+      TTS_ACCELERATOR: ${TTS_ACCELERATOR:-auto}
+      PRELOAD_MODEL: ${PRELOAD_MODEL:-1}
+      WARMUP_ON_PRELOAD: ${WARMUP_ON_PRELOAD:-true}
+      IDLE_UNLOAD_SECONDS: ${IDLE_UNLOAD_SECONDS:-900}
+      MAX_LOADED_MODELS: ${MAX_LOADED_MODELS:-1}
+      SCRIPT_LINE_MAX_CHARS: ${SCRIPT_LINE_MAX_CHARS:-150}

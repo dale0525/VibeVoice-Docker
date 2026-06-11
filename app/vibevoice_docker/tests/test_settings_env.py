@@ -42,3 +42,28 @@ class TestSettingsEnv(unittest.TestCase):
         settings = Settings.load()
         self.assertEqual(123, settings.vibevoice_default_seed)
         self.assertEqual(0.65, settings.vibevoice_default_temperature)
+
+    def test_inference_accelerator_defaults_to_auto(self) -> None:
+        os.environ.pop("TTS_ACCELERATOR", None)
+        os.environ.pop("INFERENCE_ACCELERATOR", None)
+        settings = Settings.load()
+        self.assertEqual("auto", settings.inference_accelerator)
+
+    def test_inference_accelerator_can_be_overridden(self) -> None:
+        os.environ["TTS_ACCELERATOR"] = "metal"
+        settings = Settings.load()
+        self.assertEqual("mps", settings.inference_accelerator)
+
+    def test_cosyvoice3_acceleration_flags_default_off(self) -> None:
+        os.environ.pop("COSYVOICE3_LOAD_TRT", None)
+        os.environ.pop("COSYVOICE3_LOAD_VLLM", None)
+        settings = Settings.load()
+        self.assertFalse(settings.cosyvoice3_load_trt)
+        self.assertFalse(settings.cosyvoice3_load_vllm)
+
+    def test_cosyvoice3_acceleration_flags_can_be_enabled(self) -> None:
+        os.environ["COSYVOICE3_LOAD_TRT"] = "true"
+        os.environ["COSYVOICE3_LOAD_VLLM"] = "1"
+        settings = Settings.load()
+        self.assertTrue(settings.cosyvoice3_load_trt)
+        self.assertTrue(settings.cosyvoice3_load_vllm)

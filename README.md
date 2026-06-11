@@ -56,7 +56,28 @@ docker compose up -d
 
 可选变量：
 - `MODEL`：模型 tag，默认 `1.5b`
+- `TTS_IMAGE_TAG`：镜像 tag 覆盖值；本地自建测试镜像时可和 `MODEL` 分离
 - `TTS_IMAGE_REPO`：镜像仓库，默认 `ghcr.io/dale0525/tts-docker`
+- `TTS_ACCELERATOR`：推理加速策略，默认 `auto`；可选 `auto` / `cpu` / `cuda` / `mps`
+
+NVIDIA GPU 主机使用 CUDA：
+
+```bash
+TTS_ACCELERATOR=cuda docker compose -f docker-compose.yml -f docker-compose.cuda.yml up -d
+```
+
+Apple Silicon Mac + Colima 本地测试 CosyVoice3 0.5B（native arm64 CPU/ORT 路径，不依赖 NVIDIA）：
+
+```bash
+pixi install
+pixi run docker-build-cosy3-colima
+pixi run up-cosy3-colima
+```
+
+说明：
+- VibeVoice 1.5B/7B 在 macOS 原生 Python 环境可走 `TTS_ACCELERATOR=mps`；Docker/Colima 无法直接暴露 Apple Metal/MPS 给 Linux 容器
+- CosyVoice3 的上游 `AutoModel` 当前只在 CUDA 下启用 `fp16` / TensorRT / vLLM；Colima 测试使用 native arm64 CPU + ONNX Runtime CPU provider
+- 若要在 CUDA 环境进一步启用 CosyVoice3 TensorRT/vLLM，可设置 `COSYVOICE3_LOAD_TRT=true` 或 `COSYVOICE3_LOAD_VLLM=true`
 
 数据持久化：
 - 宿主机 `./data` → 容器 `/data`
@@ -195,6 +216,9 @@ curl -X POST http://localhost:8000/v1/audio/speech \
 - `SCRIPT_LINE_MAX_CHARS=150`：每个说话段的单行最大字符数（超过则优先按句号 `.` 自动拆分）
 - `VIBEVOICE_DEFAULT_SEED=42`：VibeVoice 默认随机种子（请求未传 `seed` 时生效）
 - `VIBEVOICE_DEFAULT_TEMPERATURE=0.0`：VibeVoice 默认采样温度（请求未传 `temperature` 时生效）
+- `TTS_ACCELERATOR=auto`：推理加速策略；`auto` 会优先 CUDA，其次 VibeVoice 的 MPS，最后 CPU
+- `COSYVOICE3_LOAD_TRT=false`：CUDA 环境下启用 CosyVoice3 TensorRT
+- `COSYVOICE3_LOAD_VLLM=false`：CUDA 环境下启用 CosyVoice3 vLLM
 
 目录（一般不需要改）：
 - `DATA_DIR`：默认 `/data`

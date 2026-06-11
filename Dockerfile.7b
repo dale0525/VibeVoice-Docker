@@ -1,10 +1,12 @@
-FROM pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+ARG BASE_IMAGE=pytorch/pytorch:2.3.1-cuda12.1-cudnn8-runtime
+FROM ${BASE_IMAGE}
 
 # 构建参数：默认使用国内镜像源（可在 docker build 时通过 --build-arg 覆盖）
 ARG USE_CN_MIRRORS=1
 ARG APT_MIRROR_HOST=mirrors.aliyun.com
 ARG PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+ARG INSTALL_TORCH_CPU=0
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN set -eux; \
@@ -23,8 +25,16 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
         ffmpeg \
         libsndfile1 \
+        libgomp1 \
         ca-certificates; \
     rm -rf /var/lib/apt/lists/*
+
+RUN set -eux; \
+    if [ "${INSTALL_TORCH_CPU}" = "1" ]; then \
+        pip install --no-cache-dir \
+            "torch==2.3.1" \
+            "torchaudio==2.3.1"; \
+    fi
 
 WORKDIR /opt
 
@@ -52,7 +62,6 @@ RUN set -eux; \
             "numpy==1.26.4" \
             "omegaconf==2.3.0" \
             "onnx==1.16.0" \
-            "onnxruntime-gpu==1.18.0" \
             "pyarrow==18.1.0" \
             "pyworld==0.3.4" \
             "tiktoken==0.12.0" \
@@ -62,6 +71,11 @@ RUN set -eux; \
             "wetext==0.0.4" \
             "wget==3.2" \
             "x-transformers==2.11.24"; \
+        if [ "${INSTALL_TORCH_CPU}" = "1" ]; then \
+            pip install --no-cache-dir "onnxruntime==1.18.0"; \
+        else \
+            pip install --no-cache-dir "onnxruntime-gpu==1.18.0"; \
+        fi; \
         pip install --no-cache-dir --no-build-isolation \
             "openai-whisper==20231117"; \
     fi

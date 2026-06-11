@@ -14,6 +14,7 @@ import torch
 
 ModelId = Literal["vibevoice-1.5b", "vibevoice-7b", "cosyvoice3-0.5b"]
 BackendId = Literal["vibevoice", "cosyvoice3"]
+InferenceAccelerator = Literal["auto", "cpu", "cuda", "mps"]
 logger = logging.getLogger("vibevoice_docker.model_manager")
 
 
@@ -29,11 +30,29 @@ class LoadedModel:
     last_used_at: float
 
 
+@dataclass(frozen=True)
+class RuntimeCapabilities:
+    configured_accelerator: InferenceAccelerator
+    cuda_available: bool
+    mps_available: bool
+
+
 class ModelManager:
-    def __init__(self, models_dir: Path, idle_unload_seconds: int, max_loaded_models: int = 1):
+    def __init__(
+        self,
+        models_dir: Path,
+        idle_unload_seconds: int,
+        max_loaded_models: int = 1,
+        inference_accelerator: InferenceAccelerator = "auto",
+        cosyvoice3_load_trt: bool = False,
+        cosyvoice3_load_vllm: bool = False,
+    ):
         self._models_dir = models_dir
         self._idle_unload_seconds = idle_unload_seconds
         self._max_loaded_models = max(1, int(max_loaded_models))
+        self._inference_accelerator = inference_accelerator
+        self._cosyvoice3_load_trt = bool(cosyvoice3_load_trt)
+        self._cosyvoice3_load_vllm = bool(cosyvoice3_load_vllm)
         self._lock = Lock()
         self._loaded: dict[ModelId, LoadedModel] = {}
 
@@ -46,8 +65,51 @@ class ModelManager:
             return self._models_dir / "Fun-CosyVoice3-0.5B"
         raise ValueError(f"Unsupported model: {model_id}")
 
-    def _pick_device(self) -> str:
-        return "cuda" if torch.cuda.is_available() else "cpu"
+    def runtime_capabilities(self) -> RuntimeCapabilities:
+        return RuntimeCapabilities(
+            configured_accelerator=self._inference_accelerator,
+            cuda_available=self._cuda_available(),
+            mps_available=self._mps_available(),
+        )
+
+    def _cuda_available(self) -> bool:
+        try:
+            return bool(torch.cuda.is_available())
+        except Exception:
+            return False
+
+    def _mps_available(self) -> bool:
+        try:
+            mps = getattr(getattr(torch, "backends", None), "mps", None)
+            return bool(mps is not None and mps.is_available())
+        except Exception:
+            return False
+
+    def _pick_device(self, backend: BackendId) -> str:
+        requested = self._inference_accelerator
+        if requested == "cpu":
+            return "cpu"
+        if requested == "cuda":
+            if self._cuda_available():
+                return "cuda"
+            raise RuntimeError("TTS_ACCELERATOR=cuda was requested, but torch.cuda is not available.")
+        if requested == "mps":
+            if backend != "vibevoice":
+                raise RuntimeError("TTS_ACCELERATOR=mps is only supported by the VibeVoice backend.")
+            if self._mps_available():
+                return "mps"
+            raise RuntimeError("TTS_ACCELERATOR=mps was requested, but torch MPS is not available.")
+
+        if self._cuda_available():
+            return "cuda"
+        if backend == "vibevoice" and self._mps_available():
+            return "mps"
+        return "cpu"
+
+    def _dtype_for_device(self, device: str) -> torch.dtype:
+        if device == "cuda":
+            return torch.bfloat16
+        return torch.float32
 
     def _detect_backend(self, model_id: ModelId) -> BackendId:
         if model_id == "cosyvoice3-0.5b":
@@ -62,12 +124,18 @@ class ModelManager:
             raise RuntimeError("VibeVoice backend dependencies are unavailable in this image.") from exc
 
         processor = VibeVoiceProcessor.from_pretrained(str(model_path))
-        model = VibeVoiceForConditionalGenerationInference.from_pretrained(
-            str(model_path),
-            torch_dtype=dtype,
-            device_map=device,
-            attn_implementation="sdpa",
-        )
+        model_kwargs: dict[str, Any] = {
+            "torch_dtype": dtype,
+            "attn_implementation": "sdpa",
+        }
+        if device == "mps":
+            model_kwargs["device_map"] = None
+        else:
+            model_kwargs["device_map"] = device
+
+        model = VibeVoiceForConditionalGenerationInference.from_pretrained(str(model_path), **model_kwargs)
+        if device == "mps":
+            model.to("mps")
         model.eval()
         model.set_ddpm_inference_steps(num_steps=10)
         return processor, model, 24000
@@ -78,6 +146,11 @@ class ModelManager:
         device: str,
         dtype: torch.dtype,
     ) -> tuple[Any, Any, int]:
+        if self._cosyvoice3_load_trt and device != "cuda":
+            raise RuntimeError("COSYVOICE3_LOAD_TRT=true requires CUDA acceleration.")
+        if self._cosyvoice3_load_vllm and device != "cuda":
+            raise RuntimeError("COSYVOICE3_LOAD_VLLM=true requires CUDA acceleration.")
+
         cosyvoice_root = Path("/opt/CosyVoice")
         matcha_root = cosyvoice_root / "third_party" / "Matcha-TTS"
 
@@ -97,7 +170,12 @@ class ModelManager:
             raise RuntimeError("CosyVoice3 backend dependencies are unavailable in this image.") from exc
 
         fp16 = device == "cuda" and dtype in {torch.float16, torch.bfloat16}
-        model = AutoModel(model_dir=str(model_path), fp16=fp16)
+        model = AutoModel(
+            model_dir=str(model_path),
+            fp16=fp16,
+            load_trt=self._cosyvoice3_load_trt,
+            load_vllm=self._cosyvoice3_load_vllm,
+        )
         self._ensure_cosyvoice3_cuda_provider(model, device=device)
         sample_rate = int(getattr(model, "sample_rate", 24000))
         return None, model, sample_rate
@@ -151,8 +229,8 @@ class ModelManager:
                 )
 
             backend = self._detect_backend(model_id)
-            device = self._pick_device()
-            dtype = torch.bfloat16 if device == "cuda" else torch.float32
+            device = self._pick_device(backend)
+            dtype = self._dtype_for_device(device)
 
             started_at = time.perf_counter()
             logger.info("Loading model %s from %s (backend=%s device=%s dtype=%s)", model_id, model_path, backend, device, dtype)

@@ -3,19 +3,34 @@ name = "tts-docker"
 version = "0.1.0"
 description = "TTS Docker API + Web UI"
 channels = ["conda-forge"]
-platforms = ["win-64", "linux-64"]
+platforms = ["win-64", "linux-64", "osx-arm64"]
 
 [dependencies]
 python = ">=3.10,<3.12"
 
+[target.linux-64.dependencies]
+docker-buildx = ">=0.34.1,<0.35"
+docker-cli = ">=29.5.3,<30"
+docker-compose = ">=5.1.4,<6"
+
+[target.osx-arm64.dependencies]
+colima = ">=0.10.3,<0.11"
+docker-buildx = ">=0.34.1,<0.35"
+docker-cli = ">=29.5.3,<30"
+docker-compose = ">=5.1.4,<6"
+
 [tasks]
-dev = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-1.5b -t ghcr.io/dale0525/tts-docker:1.5b --load . && docker compose up"
-dev-7b = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-7b -t ghcr.io/dale0525/tts-docker:7b --load . && docker compose up"
-dev-cosy3 = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=cosyvoice3-0.5b -t ghcr.io/dale0525/tts-docker:cosyvoice3-0.5b --load . && docker compose up"
-up = "docker compose up"
-down = "docker compose down"
-logs = "docker compose logs -f"
-shell = "docker compose exec tts bash"
-docker-build = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-1.5b -t ghcr.io/dale0525/tts-docker:1.5b --load ."
-docker-build-7b = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-7b -t ghcr.io/dale0525/tts-docker:7b --load ."
-docker-build-cosy3 = "docker buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=cosyvoice3-0.5b -t ghcr.io/dale0525/tts-docker:cosyvoice3-0.5b --load ."
+dev = "docker-buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-1.5b -t ghcr.io/dale0525/tts-docker:1.5b --load . && docker-compose up"
+dev-7b = "docker-buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-7b -t ghcr.io/dale0525/tts-docker:7b --load . && docker-compose up"
+dev-cosy3 = "docker-buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=cosyvoice3-0.5b -t ghcr.io/dale0525/tts-docker:cosyvoice3-0.5b --load . && docker-compose up"
+dev-cosy3-colima = "docker-buildx build --progress=plain --platform linux/arm64 -f Dockerfile.cosy --build-arg BASE_IMAGE=python:3.11-slim-bookworm --build-arg INSTALL_TORCH_CPU=1 --build-arg MODEL_ID=cosyvoice3-0.5b -t ghcr.io/dale0525/tts-docker:cosyvoice3-0.5b-colima --load . && MODEL=cosyvoice3-0.5b TTS_IMAGE_TAG=cosyvoice3-0.5b-colima TTS_ACCELERATOR=cpu docker-compose -f docker-compose.yml -f docker-compose.colima.yml up"
+up = "docker-compose up"
+up-cuda = "TTS_ACCELERATOR=cuda docker-compose -f docker-compose.yml -f docker-compose.cuda.yml up"
+up-cosy3-colima = "MODEL=cosyvoice3-0.5b TTS_IMAGE_TAG=cosyvoice3-0.5b-colima TTS_ACCELERATOR=cpu docker-compose -f docker-compose.yml -f docker-compose.colima.yml up"
+down = "docker-compose down"
+logs = "docker-compose logs -f"
+shell = "docker-compose exec tts bash"
+docker-build = "docker-buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-1.5b -t ghcr.io/dale0525/tts-docker:1.5b --load ."
+docker-build-7b = "docker-buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=vibevoice-7b -t ghcr.io/dale0525/tts-docker:7b --load ."
+docker-build-cosy3 = "docker-buildx build --progress=plain --cache-from type=local,src=.buildx-cache --cache-to type=local,dest=.buildx-cache,mode=max --build-arg MODEL_ID=cosyvoice3-0.5b -t ghcr.io/dale0525/tts-docker:cosyvoice3-0.5b --load ."
+docker-build-cosy3-colima = "docker-buildx build --progress=plain --platform linux/arm64 -f Dockerfile.cosy --build-arg BASE_IMAGE=python:3.11-slim-bookworm --build-arg INSTALL_TORCH_CPU=1 --build-arg MODEL_ID=cosyvoice3-0.5b -t ghcr.io/dale0525/tts-docker:cosyvoice3-0.5b-colima --load ."

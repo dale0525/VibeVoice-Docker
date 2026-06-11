@@ -15,6 +15,7 @@ models/
 .pixi/
 .pixi-cache/
 .buildx-cache/
+.tool/
 .python-version
 .git/
 .github/
