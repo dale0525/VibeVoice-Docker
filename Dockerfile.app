@@ -19,6 +19,8 @@ ENV HF_HUB_DISABLE_TELEMETRY=1
 EXPOSE 8000 80
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
 
+# model-block:start:vibevoice-1.5b
+# model-block:start:vibevoice-7b
 FROM app-common AS app-vibevoice
 
 WORKDIR /opt
@@ -27,7 +29,11 @@ WORKDIR /opt
 COPY VibeVoice/pyproject.toml VibeVoice/README.md VibeVoice/LICENSE /opt/VibeVoice/
 COPY VibeVoice/vibevoice /opt/VibeVoice/vibevoice
 RUN pip install --no-cache-dir --no-deps -e /opt/VibeVoice
+COPY scripts/download_vibevoice_tokenizer.py /opt/scripts/download_vibevoice_tokenizer.py
+RUN python /opt/scripts/download_vibevoice_tokenizer.py
 
 WORKDIR /app
+# model-block:end:vibevoice-7b
+# model-block:end:vibevoice-1.5b
 
 FROM app-common AS app
